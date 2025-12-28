@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Дурак для Бабушки</title>
+    <title>Дурак Онлайн</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -14,17 +14,30 @@
     <!-- ГЛАВНОЕ МЕНЮ -->
     <div id="main-menu">
         <h1 class="game-title">🂡 ДУРАК 🂡</h1>
-        <div class="mode-select">
-            <label>Режим игры:</label>
-            <select id="game-mode-select">
-                <option value="normal">Подкидной</option>
-                <option value="transfer">Переводной</option>
-            </select>
-        </div>
+        
         <div class="menu-buttons">
-            <button class="menu-btn play" onclick="app.startGame()">▶ ИГРАТЬ</button>
-            <button class="menu-btn settings" onclick="app.openSettings()">⚙ НАСТРОЙКИ</button>
+            <!-- Рейтинг -->
+            <div class="ranks">
+                <div id="menu-rank" class="rank">Новичок</div>
+                <div id="menu-score" class="score">0 очков</div>
+            </div>
+
+            <div class="mode-select">
+                <label>Режим игры:</label>
+                <select id="game-mode-select">
+                    <option value="normal">Подкидной</option>
+                    <option value="transfer">Переводной</option>
+                </select>
+            </div>
+            
+            <!-- Кнопки старта -->
+            <div class="menu-group">
+                <button id="btn-continue" class="menu-btn continue hidden" onclick="app.continueGame()">▶ ПРОДОЛЖИТЬ</button>
+                <button id="btn-newgame" class="menu-btn play" onclick="app.startGame()">▶ НОВАЯ ИГРА</button>
+            </div>
+            
             <button class="menu-btn stats" onclick="app.showStats()">🏆 СЧЁТ</button>
+            <button class="menu-btn settings" onclick="app.openSettings()">⚙ НАСТРОЙКИ</button>
             <button class="menu-btn exit" onclick="app.exitGame()">✖ ВЫХОД</button>
         </div>
         <p class="version">Создал Henxed. Сборка: 28122025.222110</p>
@@ -43,20 +56,10 @@
                     <button class="toggle-btn active" onclick="app.setBotCount(3)" id="btn-bot-3">3</button>
                 </div>
             </div>
-
-            <div class="setting-block">
-                <label>Режим игры:</label>
-                <div class="toggle-group">
-                    <button class="toggle-btn active" onclick="app.setMode('normal')" id="btn-mode-normal">Подкидной</button>
-                    <button class="toggle-btn" onclick="app.setMode('transfer')" id="btn-mode-transfer">Переводной</button>
-                </div>
-            </div>
-
             <div class="setting-block">
                 <label>Звук:</label>
                 <button class="toggle-btn wide active" onclick="app.toggleSound()" id="btn-sound">ВКЛЮЧЕН 🔊</button>
             </div>
-
             <button class="menu-btn play" onclick="app.closeSettings()">ГОТОВО</button>
         </div>
     </div>
@@ -64,7 +67,10 @@
     <!-- СТАТИСТИКА -->
     <div id="stats-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Счёт</h2>
+            <h2>Статистика</h2>
+            <div class="stat-row"><span>Ранг:</span><span id="stat-rank" style="color: gold;">-</span></div>
+            <div class="stat-row"><span>Очки:</span><span id="stat-score">-</span></div>
+            <hr style="opacity: 0.3;">
             <div class="stat-row"><span>Побед:</span><span id="stat-wins" class="green">0</span></div>
             <div class="stat-row"><span>Проигрышей:</span><span id="stat-losses" class="red">0</span></div>
             <button class="menu-btn" onclick="app.closeStats()">Закрыть</button>
@@ -83,18 +89,18 @@
 
         <div class="game-grid">
             <div class="player-zone top" id="p2">
-                <div class="name-tag">👴 Женя</div>
+                <div class="name-tag">👴</div>
                 <div class="hand"></div>
             </div>
             <div class="player-zone left" id="p1">
-                <div class="name-tag">👱‍♀️ Лиза</div>
+                <div class="name-tag">👱‍♀️</div>
                 <div class="hand vertical"></div>
             </div>
             <div class="table-area">
                 <div id="active-table"></div>
             </div>
             <div class="player-zone right" id="p3">
-                <div class="name-tag">🤓 Коля</div>
+                <div class="name-tag">🤓</div>
                 <div class="hand vertical"></div>
             </div>
         </div>

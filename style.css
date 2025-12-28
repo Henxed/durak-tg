@@ -3,6 +3,7 @@
   --card-w: 70px;
   --card-h: 105px;
   --gold: #ffd700;
+  --green: #68e56d;
 }
 
 body {
@@ -35,7 +36,6 @@ body {
 .game-title {
   font-size: 50px;
   color: var(--gold);
-  margin-bottom: 30px;
   text-shadow: 2px 2px 0 #000;
 }
 .menu-buttons {
@@ -45,9 +45,17 @@ body {
   width: 85%;
   max-width: 320px;
 }
+
+.menu-group  {
+    display: flex;
+    gap: 10px;
+}
+
 .menu-btn {
-  padding: 18px;
-  font-size: 20px;
+  padding: 18px 10px;
+  font-size: 15px;
+  display: block;
+  width: 100%;
   border-radius: 15px;
   border: none;
   font-weight: bold;
@@ -62,6 +70,10 @@ body {
 
 .play {
   background: var(--gold);
+  color: black;
+}
+.continue {
+  background: var(--green);
   color: black;
 }
 .settings {
@@ -541,3 +553,18 @@ button {
   transform: translate(-50%, -50%);
   font-size: 40px;
 }
+
+.ranks {
+    background: rgba(0,0,0,0.3);
+    padding: 10px;
+    border-radius: 10px;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ranks .rank {
+    font-weight: bold;
+    color: #FFD700
+}
+.ranks .score {margin-left: 1rem;}
