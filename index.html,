@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Дурак для бабушки</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Зона бота (сверху) -->
+        <div class="opponent-area">
+            <div class="avatar">🤖 Бот</div>
+            <div id="bot-hand" class="hand-container"></div>
+        </div>
+
+        <!-- Игровой стол (центр) -->
+        <div class="table-area">
+            <div class="deck-pile">
+                <div class="card back"></div>
+                <div id="trump-card" class="card"></div>
+                <div id="deck-count">36</div>
+            </div>
+            <div id="active-table" class="active-cards"></div>
+        </div>
+
+        <!-- Кнопки действий -->
+        <div class="actions">
+            <button id="action-btn" onclick="playerAction()">Бито / Взять</button>
+            <div id="status-msg">Ваш ход!</div>
+        </div>
+
+        <!-- Зона игрока (снизу) -->
+        <div class="player-area">
+            <div id="player-hand" class="hand-container"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
