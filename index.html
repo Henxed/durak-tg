@@ -3,37 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Дурак для бабушки</title>
+    <title>Дурак для Бабушки</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-    <div id="app">
-        <!-- Зона бота (сверху) -->
-        <div class="opponent-area">
-            <div class="avatar">🤖 Бот</div>
-            <div id="bot-hand" class="hand-container"></div>
-        </div>
 
-        <!-- Игровой стол (центр) -->
-        <div class="table-area">
-            <div class="deck-pile">
-                <div class="card back"></div>
-                <div id="trump-card" class="card"></div>
-                <div id="deck-count">36</div>
+    <div id="big-message" class="hidden">ВАШ ХОД</div>
+
+    <!-- ГЛАВНОЕ МЕНЮ -->
+    <div id="main-menu">
+        <h1 class="game-title">🂡 ДУРАК 🂡</h1>
+        <div class="mode-select">
+            <label>Режим игры:</label>
+            <select id="game-mode-select">
+                <option value="normal">Подкидной</option>
+                <option value="transfer">Переводной</option>
+            </select>
+        </div>
+        <div class="menu-buttons">
+            <button class="menu-btn play" onclick="app.startGame()">▶ ИГРАТЬ</button>
+            <button class="menu-btn settings" onclick="app.openSettings()">⚙ НАСТРОЙКИ</button>
+            <button class="menu-btn stats" onclick="app.showStats()">🏆 СЧЁТ</button>
+            <button class="menu-btn exit" onclick="app.exitGame()">✖ ВЫХОД</button>
+        </div>
+        <p class="version">Версия с выбором ботов</p>
+    </div>
+
+    <!-- НАСТРОЙКИ -->
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content large-modal">
+            <h2>Настройки</h2>
+            
+            <div class="setting-block">
+                <label>Количество соперников:</label>
+                <div class="toggle-group" id="bot-count-group">
+                    <button class="toggle-btn" onclick="app.setBotCount(1)" id="btn-bot-1">1</button>
+                    <button class="toggle-btn" onclick="app.setBotCount(2)" id="btn-bot-2">2</button>
+                    <button class="toggle-btn active" onclick="app.setBotCount(3)" id="btn-bot-3">3</button>
+                </div>
             </div>
-            <div id="active-table" class="active-cards"></div>
+
+            <div class="setting-block">
+                <label>Режим игры:</label>
+                <div class="toggle-group">
+                    <button class="toggle-btn active" onclick="app.setMode('normal')" id="btn-mode-normal">Подкидной</button>
+                    <button class="toggle-btn" onclick="app.setMode('transfer')" id="btn-mode-transfer">Переводной</button>
+                </div>
+            </div>
+
+            <div class="setting-block">
+                <label>Звук:</label>
+                <button class="toggle-btn wide active" onclick="app.toggleSound()" id="btn-sound">ВКЛЮЧЕН 🔊</button>
+            </div>
+
+            <button class="menu-btn play" onclick="app.closeSettings()">ГОТОВО</button>
+        </div>
+    </div>
+
+    <!-- СТАТИСТИКА -->
+    <div id="stats-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Счёт</h2>
+            <div class="stat-row"><span>Побед:</span><span id="stat-wins" class="green">0</span></div>
+            <div class="stat-row"><span>Проигрышей:</span><span id="stat-losses" class="red">0</span></div>
+            <button class="menu-btn" onclick="app.closeStats()">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- ИГРА -->
+    <div id="game-screen" class="hidden">
+        <div class="top-bar">
+            <button class="small-btn" onclick="app.toMenu()">Меню</button>
+            <div class="deck-info">
+                <span>Карт: <b id="deck-count">36</b></span>
+                <div class="trump-display" id="trump-icon">♠</div>
+            </div>
         </div>
 
-        <!-- Кнопки действий -->
-        <div class="actions">
-            <button id="action-btn" onclick="playerAction()">Бито / Взять</button>
-            <div id="status-msg">Ваш ход!</div>
+        <div class="game-grid">
+            <div class="player-zone top" id="p2">
+                <div class="name-tag">👴 Женя</div>
+                <div class="hand"></div>
+            </div>
+            <div class="player-zone left" id="p1">
+                <div class="name-tag">👱‍♀️ Лиза</div>
+                <div class="hand vertical"></div>
+            </div>
+            <div class="table-area">
+                <div id="active-table"></div>
+            </div>
+            <div class="player-zone right" id="p3">
+                <div class="name-tag">🤓 Коля</div>
+                <div class="hand vertical"></div>
+            </div>
         </div>
 
-        <!-- Зона игрока (снизу) -->
+        <!-- Низ: Игрок -->
         <div class="player-area">
-            <div id="player-hand" class="hand-container"></div>
+            <div class="controls-row">
+                <div class="btn-group">
+                    <button id="pass-btn" class="sec-btn" onclick="game.playerPass()">БИТО</button>
+                    <button id="action-btn" class="main-btn" onclick="game.playerButtonAction()">ЖДИТЕ...</button>
+                </div>
+            </div>
+            <div class="my-cards-scroll">
+                <div id="my-hand" class="my-hand-container"></div>
+            </div>
         </div>
     </div>
 
