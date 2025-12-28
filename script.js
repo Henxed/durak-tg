@@ -6,7 +6,7 @@ const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const RANK_NAMES = {'6':'6', '7':'7', '8':'8', '9':'9', '10':'10', 'J':'В', 'Q':'Д', 'K':'К', 'A':'Т'};
 const VALUES = {'6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14};
-const BOT_DELAY = 2500;
+const BOT_DELAY = 2000; // Чуть ускорил ботов для динамики
 
 // --- ЗВУКОВОЙ МЕНЕДЖЕР ---
 const soundManager = {
@@ -238,7 +238,6 @@ class DurakGame {
             else this.showMessage(`ХОДИТ ${attacker.name.toUpperCase()}`);
         }
 
-        // --- ВАЖНО: Запускаем ботов только если их очередь ---
         if (attacker.type === 'bot' && this.table.every(p => p.defend)) {
             setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
         } else if (defender.type === 'bot' && this.table.some(p => !p.defend)) {
@@ -312,7 +311,11 @@ class DurakGame {
         } else if (type === 'attack') {
             this.table.push({ attack: card, defend: null });
         } else {
-            this.table[this.table.length - 1].defend = card;
+            // ФИКС ЗАВИСАНИЯ:
+            // Ищем ПЕРВУЮ свободную пару, а не просто добавляем в конец или в последнюю.
+            // Это важно, когда на столе куча карт после переводов.
+            const pair = this.table.find(p => !p.defend);
+            if (pair) pair.defend = card;
         }
         this.updateUI();
         this.processTurn();
@@ -321,8 +324,9 @@ class DurakGame {
     // --- БОТЫ ---
     botAttack() {
         if (!app.isGameActive || this.attackerIdx === 0) return;
-        // --- ЗАЩИТА ОТ ГЛЮКА "БОТ ХОДИТ ЗА МЕНЯ" ---
-        // Бот не должен подкидывать, если на столе есть неотбитые карты (например, после перевода)
+        
+        // Защита от глюка "Бот ходит за меня":
+        // Бот не должен подкидывать, если на столе лежат неотбитые карты (после перевода)
         if (!this.table.every(p => p.defend) && this.table.length > 0) return;
 
         const bot = this.players[this.attackerIdx];
@@ -350,18 +354,16 @@ class DurakGame {
     }
 
     botDefend() {
-        if (!app.isGameActive || this.defenderIdx === 0) return;
+        if (!app.isGameActive) return;
         const bot = this.players[this.defenderIdx];
         const attack = this.getLastUnbeaten();
         if (!attack) return;
 
-        // Попытка перевода
         if (this.gameMode === 'transfer' && this.table.every(p => !p.defend)) {
             const tIdx = bot.hand.findIndex(c => c.rank === attack.rank);
             if (tIdx !== -1) { this.playCard(this.defenderIdx, tIdx, 'transfer'); return; }
         }
 
-        // Защита
         let bestIdx = -1; let minVal = 100;
         bot.hand.forEach((c, i) => {
             if (this.canBeat(attack, c)) {
@@ -389,10 +391,14 @@ class DurakGame {
         if (def.suit === this.trump.suit && att.suit !== this.trump.suit) return true;
         return (def.suit === att.suit && def.value > att.value);
     }
+    
+    // ФИКС ЗАВИСАНИЯ:
+    // Ищем ПЕРВУЮ карту, которую еще не отбили, а не последнюю в массиве.
     getLastUnbeaten() {
-        const l = this.table[this.table.length-1];
-        return (l && !l.defend) ? l.attack : null;
+        const pair = this.table.find(p => !p.defend);
+        return pair ? pair.attack : null;
     }
+    
     findMinCard(hand) {
         let idx = -1; let min = 100;
         hand.forEach((c, i) => {
@@ -427,7 +433,7 @@ class DurakGame {
         if (this.deck.length > 0) return false;
 
         const human = this.players[0];
-        // ПОБЕДА: У игрока кончились карты
+        // Победа: карт нет у игрока
         if (human.hand.length === 0) {
             app.isGameActive = false;
             soundManager.playWin();
@@ -439,7 +445,7 @@ class DurakGame {
             return true;
         }
 
-        // ПРОИГРЫШ: У игрока есть карты, а у всех активных ботов - нет
+        // Проигрыш: У всех ботов нет карт, а у игрока есть
         const botsWithCards = this.players.filter(p => p.id !== 0 && p.hand.length > 0);
         if (botsWithCards.length === 0) {
             app.isGameActive = false;
@@ -468,8 +474,10 @@ class DurakGame {
         });
         let active = this.attackerIdx;
         if(this.table.length > 0 && !this.table[this.table.length-1].defend) active = this.defenderIdx;
+        
         const p = this.players[active];
         let sel = (p.id === 0) ? '.name-tag.me' : `#${p.visualId} .name-tag`;
+
         const el = document.querySelector(sel);
         if(el) el.classList.add('active-turn');
     }
@@ -507,7 +515,7 @@ class DurakGame {
             }
         } else if (this.defenderIdx === 0) {
             if (this.selectedCardIdx !== null) {
-                // ПРОВЕРКА НА ПЕРЕВОД ДЛЯ UI
+                // UI ТЕКСТ: ПЕРЕВОД ИЛИ ЗАЩИТА
                 const card = this.players[0].hand[this.selectedCardIdx];
                 const canTransfer = (this.gameMode === 'transfer' && 
                                      this.table.length > 0 && 
