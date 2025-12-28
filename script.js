@@ -8,7 +8,7 @@ const RANK_NAMES = {'6':'6', '7':'7', '8':'8', '9':'9', '10':'10', 'J':'В', 'Q'
 const VALUES = {'6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14};
 const BOT_DELAY = 2500;
 
-// --- ЗВУКОВОЙ МЕНЕДЖЕР (Web Audio API) ---
+// --- ЗВУКОВОЙ МЕНЕДЖЕР ---
 const soundManager = {
     ctx: null,
     enabled: true,
@@ -36,39 +36,33 @@ const soundManager = {
     },
 
     playClick: function() { this.playTone(600, 'sine', 0.1); },
-    playCard: function() { this.playTone(300, 'triangle', 0.1, 0.05); }, // Глухой звук карты
+    playCard: function() { this.playTone(300, 'triangle', 0.1, 0.05); },
     playWin: function() { 
         if (!this.enabled || !this.ctx) return;
-        [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.playTone(f, 'sine', 0.3, 0.2), i*150));
+        [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => this.playTone(f, 'sine', 0.4, 0.2), i*150));
     },
     playLose: function() {
         if (!this.enabled || !this.ctx) return;
-        [300, 250, 200].forEach((f, i) => setTimeout(() => this.playTone(f, 'sawtooth', 0.4, 0.2), i*200));
+        [300, 250, 200, 150].forEach((f, i) => setTimeout(() => this.playTone(f, 'sawtooth', 0.5, 0.2), i*250));
     }
 };
 
 // --- ПРИЛОЖЕНИЕ ---
 const app = {
-    settings: {
-        botCount: 3,
-        mode: 'normal',
-        sound: true
-    },
+    settings: { botCount: 3, mode: 'normal', sound: true },
     stats: { wins: 0, losses: 0 },
+    isGameActive: false, // Флаг активности игры
 
     init: function() {
         this.loadStats();
-        document.getElementById('game-mode-select').addEventListener('change', (e) => {
-            app.setMode(e.target.value);
-        });
+        const el = document.getElementById('game-mode-select');
+        if(el) el.addEventListener('change', (e) => { this.setMode(e.target.value); });
         this.updateSettingsUI();
     },
 
-    // Настройки
     openSettings: function() {
         document.getElementById('settings-modal').classList.remove('hidden');
-        soundManager.init(); // Инициализация звука при клике
-        soundManager.playClick();
+        soundManager.init(); soundManager.playClick();
     },
     closeSettings: function() {
         document.getElementById('settings-modal').classList.add('hidden');
@@ -92,15 +86,12 @@ const app = {
         soundManager.playClick();
     },
     updateSettingsUI: function() {
-        // Боты
         [1,2,3].forEach(n => {
             const btn = document.getElementById(`btn-bot-${n}`);
             if(n === this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active');
         });
-        // Режим
         document.getElementById('btn-mode-normal').classList.toggle('active', this.settings.mode === 'normal');
         document.getElementById('btn-mode-transfer').classList.toggle('active', this.settings.mode === 'transfer');
-        // Звук
         const sndBtn = document.getElementById('btn-sound');
         sndBtn.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇";
         sndBtn.classList.toggle('active', this.settings.sound);
@@ -108,6 +99,7 @@ const app = {
 
     startGame: function() {
         soundManager.init();
+        this.isGameActive = true;
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
         game.startNewGame(this.settings.botCount, this.settings.mode);
@@ -115,10 +107,9 @@ const app = {
     },
 
     toMenu: function() {
-        if(confirm("Выйти в меню?")) {
-            document.getElementById('game-screen').classList.add('hidden');
-            document.getElementById('main-menu').classList.remove('hidden');
-        }
+        this.isGameActive = false;
+        document.getElementById('game-screen').classList.add('hidden');
+        document.getElementById('main-menu').classList.remove('hidden');
     },
     exitGame: function() { tg.close(); },
 
@@ -128,10 +119,8 @@ const app = {
         document.getElementById('stats-modal').classList.remove('hidden');
         soundManager.playClick();
     },
-    closeStats: function() { 
-        document.getElementById('stats-modal').classList.add('hidden'); 
-        soundManager.playClick();
-    },
+    closeStats: function() { document.getElementById('stats-modal').classList.add('hidden'); soundManager.playClick(); },
+    
     saveStats: function(isWin) {
         if(isWin) this.stats.wins++; else this.stats.losses++;
         localStorage.setItem('durak_stats_v3', JSON.stringify(this.stats));
@@ -167,16 +156,8 @@ class DurakGame {
     startNewGame(botCount, mode) {
         this.gameMode = mode;
         this.players = [];
-
-        // Создаем игрока
         this.players.push({ id: 0, visualId: 'me', type: 'human', name: "Вы", hand: [] });
 
-        // Создаем ботов в зависимости от настроек
-        // Логика рассадки:
-        // 1 бот: p2 (Top)
-        // 2 бота: p1 (Left), p3 (Right)
-        // 3 бота: p1 (Left), p2 (Top), p3 (Right)
-        
         if (botCount === 1) {
             this.players.push({ id: 1, visualId: 'p2', type: 'bot', name: "Женя", hand: [] });
         } else if (botCount === 2) {
@@ -196,14 +177,11 @@ class DurakGame {
         this.processTurn();
     }
 
-    // Скрывает зоны, где нет ботов
     updateVisualVisibility() {
         ['p1', 'p2', 'p3'].forEach(vid => {
             const zone = document.getElementById(vid);
-            // Проверяем, есть ли игрок с таким visualId
             const exists = this.players.some(p => p.visualId === vid);
-            if (exists) zone.classList.remove('inactive');
-            else zone.classList.add('inactive');
+            if (exists) zone.classList.remove('inactive'); else zone.classList.add('inactive');
         });
     }
 
@@ -215,14 +193,10 @@ class DurakGame {
     }
 
     determineFirstAttacker() {
-        let minTrump = 100;
-        let startIdx = 0;
+        let minTrump = 100; let startIdx = 0;
         this.players.forEach((p, idx) => {
             p.hand.forEach(c => {
-                if(c.suit === this.trump.suit && c.value < minTrump) {
-                    minTrump = c.value;
-                    startIdx = idx;
-                }
+                if(c.suit === this.trump.suit && c.value < minTrump) { minTrump = c.value; startIdx = idx; }
             });
         });
         this.attackerIdx = startIdx;
@@ -232,6 +206,8 @@ class DurakGame {
     dealCards(count) {
         let pIdx = this.attackerIdx;
         let anyDealt = false;
+        // Раздаем только тем, кто еще в игре (или всем, пока не определен победитель)
+        // В упрощенной версии раздаем всем, у кого < 6 карт
         for(let i=0; i < this.players.length; i++) {
             while(this.players[pIdx].hand.length < count && this.deck.length > 0) {
                 this.players[pIdx].hand.push(this.deck.pop());
@@ -240,7 +216,7 @@ class DurakGame {
             this.sortHand(this.players[pIdx].hand);
             pIdx = (pIdx + 1) % this.players.length;
         }
-        if (anyDealt) soundManager.playCard(); // Звук раздачи
+        if (anyDealt) soundManager.playCard();
     }
 
     sortHand(hand) {
@@ -253,6 +229,9 @@ class DurakGame {
     }
 
     processTurn() {
+        // Если игра закончилась, прекращаем цикл
+        if (!app.isGameActive) return;
+
         this.selectedCardIdx = null;
         this.highlightActivePlayer();
         this.updateUI();
@@ -266,9 +245,9 @@ class DurakGame {
         }
 
         if (attacker.type === 'bot' && this.table.every(p => p.defend)) {
-            setTimeout(() => this.botAttack(), BOT_DELAY);
+            setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
         } else if (defender.type === 'bot' && this.table.some(p => !p.defend)) {
-            setTimeout(() => this.botDefend(), BOT_DELAY);
+            setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
         }
     }
 
@@ -287,7 +266,6 @@ class DurakGame {
 
     playerButtonAction() {
         if (this.selectedCardIdx === null) return;
-        
         soundManager.playClick();
         const cardIdx = this.selectedCardIdx;
         const card = this.players[0].hand[cardIdx];
@@ -349,7 +327,7 @@ class DurakGame {
 
     // --- БОТЫ ---
     botAttack() {
-        if (this.attackerIdx === 0) return;
+        if (!app.isGameActive || this.attackerIdx === 0) return;
         const bot = this.players[this.attackerIdx];
 
         if (this.table.length === 0) {
@@ -371,12 +349,13 @@ class DurakGame {
         } else {
             if (this.table.every(p => p.defend)) {
                 this.showMessage("БИТО!");
-                setTimeout(() => this.endBout(false), 2000);
+                setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 2000);
             }
         }
     }
 
     botDefend() {
+        if (!app.isGameActive) return;
         const bot = this.players[this.defenderIdx];
         const attack = this.getLastUnbeaten();
         if (!attack) return;
@@ -398,7 +377,7 @@ class DurakGame {
             this.playCard(this.defenderIdx, bestIdx, 'defend');
         } else {
             this.showMessage(`${bot.name.toUpperCase()} БЕРЁТ`);
-            setTimeout(() => this.takeCards(this.defenderIdx), 2000);
+            setTimeout(() => { if(app.isGameActive) this.takeCards(this.defenderIdx); }, 2000);
         }
     }
 
@@ -428,7 +407,7 @@ class DurakGame {
     isTableCovered() { return this.table.every(p => p.defend !== null); }
 
     takeCards(pid) {
-        soundManager.playCard(); // Звук пачки карт
+        soundManager.playCard();
         this.table.forEach(p => {
             this.players[pid].hand.push(p.attack);
             if(p.defend) this.players[pid].hand.push(p.defend);
@@ -439,30 +418,49 @@ class DurakGame {
     endBout(took) {
         this.table = [];
         this.dealCards(6);
-        this.checkWin();
+        // Проверяем победу сразу после раздачи
+        if (this.checkWin()) return;
+
         if (took) this.attackerIdx = (this.defenderIdx + 1) % this.players.length;
         else this.attackerIdx = this.defenderIdx;
         this.defenderIdx = (this.attackerIdx + 1) % this.players.length;
+        
         this.processTurn();
     }
 
     checkWin() {
-        if (this.deck.length === 0) {
-            const active = this.players.filter(p => p.hand.length > 0);
-            if (active.length === 1) {
-                const loser = active[0];
-                if (loser.id === 0) {
-                    soundManager.playLose();
-                    alert("Вы остались дураком!"); 
-                    app.saveStats(false); 
-                } else {
-                    soundManager.playWin();
-                    alert(`Дурак: ${loser.name}. Вы победили!`); 
-                    app.saveStats(true); 
-                }
+        // 1. Игра продолжается, если в колоде есть карты
+        if (this.deck.length > 0) return false;
+
+        // Колода пуста. Проверяем состояние игрока.
+        const human = this.players[0];
+
+        // УСЛОВИЕ ПОБЕДЫ: У игрока кончились карты
+        if (human.hand.length === 0) {
+            app.isGameActive = false;
+            soundManager.playWin();
+            setTimeout(() => {
+                alert("Поздравляем! Карты закончились. Вы победили!");
+                app.saveStats(true);
                 app.toMenu();
-            }
+            }, 500);
+            return true;
         }
+
+        // УСЛОВИЕ ПРОИГРЫША: У игрока есть карты, а у ВСЕХ ботов кончились
+        const activeBots = this.players.filter(p => p.id !== 0 && p.hand.length > 0);
+        if (activeBots.length === 0) {
+            app.isGameActive = false;
+            soundManager.playLose();
+            setTimeout(() => {
+                alert("Все соперники вышли. Вы остались дураком!");
+                app.saveStats(false);
+                app.toMenu();
+            }, 500);
+            return true;
+        }
+
+        return false;
     }
 
     showMessage(text) {
@@ -473,12 +471,10 @@ class DurakGame {
     }
 
     highlightActivePlayer() {
-        // Снять подсветку со всех
         ['.name-tag.me', '#p1 .name-tag', '#p2 .name-tag', '#p3 .name-tag'].forEach(s => {
             const el = document.querySelector(s);
             if(el) el.classList.remove('active-turn');
         });
-
         let active = this.attackerIdx;
         if(this.table.length > 0 && !this.table[this.table.length-1].defend) active = this.defenderIdx;
         
@@ -546,7 +542,6 @@ class DurakGame {
             mainBtn.innerText = "ХОДЯТ БОТЫ...";
         }
 
-        // Стол
         const tbl = document.getElementById('active-table');
         tbl.innerHTML = '';
         this.table.forEach(pair => {
@@ -556,7 +551,6 @@ class DurakGame {
             tbl.appendChild(d);
         });
 
-        // Боты (отображаем карты только у активных визуальных зон)
         this.players.forEach(p => {
             if(p.type === 'bot') {
                 const z = document.getElementById(p.visualId).querySelector('.hand');
@@ -567,7 +561,6 @@ class DurakGame {
             }
         });
 
-        // Игрок
         const my = document.getElementById('my-hand');
         my.innerHTML = '';
         this.players[0].hand.forEach((c, i) => {
