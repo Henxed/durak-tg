@@ -178,14 +178,14 @@ class DurakGame {
         // 3 бота: p1 (Left), p2 (Top), p3 (Right)
         
         if (botCount === 1) {
-            this.players.push({ id: 1, visualId: 'p2', type: 'bot', name: "Михалыч", hand: [] });
+            this.players.push({ id: 1, visualId: 'p2', type: 'bot', name: "Женя", hand: [] });
         } else if (botCount === 2) {
-            this.players.push({ id: 1, visualId: 'p1', type: 'bot', name: "Света", hand: [] });
-            this.players.push({ id: 2, visualId: 'p3', type: 'bot', name: "Вася", hand: [] });
+            this.players.push({ id: 1, visualId: 'p1', type: 'bot', name: "Лиза", hand: [] });
+            this.players.push({ id: 2, visualId: 'p3', type: 'bot', name: "Коля", hand: [] });
         } else {
-            this.players.push({ id: 1, visualId: 'p1', type: 'bot', name: "Света", hand: [] });
-            this.players.push({ id: 2, visualId: 'p2', type: 'bot', name: "Михалыч", hand: [] });
-            this.players.push({ id: 3, visualId: 'p3', type: 'bot', name: "Вася", hand: [] });
+            this.players.push({ id: 1, visualId: 'p1', type: 'bot', name: "Лиза", hand: [] });
+            this.players.push({ id: 2, visualId: 'p2', type: 'bot', name: "Женя", hand: [] });
+            this.players.push({ id: 3, visualId: 'p3', type: 'bot', name: "Коля", hand: [] });
         }
 
         this.updateVisualVisibility();
