@@ -12,7 +12,6 @@ const BOT_DELAY = 2500;
 const soundManager = {
     ctx: null,
     enabled: true,
-
     init: function() {
         if (!this.ctx) {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -20,7 +19,6 @@ const soundManager = {
         }
         if (this.ctx.state === 'suspended') this.ctx.resume();
     },
-
     playTone: function(freq, type, duration, vol = 0.1) {
         if (!this.enabled || !this.ctx) return;
         const osc = this.ctx.createOscillator();
@@ -34,7 +32,6 @@ const soundManager = {
         osc.start();
         osc.stop(this.ctx.currentTime + duration);
     },
-
     playClick: function() { this.playTone(600, 'sine', 0.1); },
     playCard: function() { this.playTone(300, 'triangle', 0.1, 0.05); },
     playWin: function() { 
@@ -51,7 +48,7 @@ const soundManager = {
 const app = {
     settings: { botCount: 3, mode: 'normal', sound: true },
     stats: { wins: 0, losses: 0 },
-    isGameActive: false, // Флаг активности игры
+    isGameActive: false,
 
     init: function() {
         this.loadStats();
@@ -206,8 +203,6 @@ class DurakGame {
     dealCards(count) {
         let pIdx = this.attackerIdx;
         let anyDealt = false;
-        // Раздаем только тем, кто еще в игре (или всем, пока не определен победитель)
-        // В упрощенной версии раздаем всем, у кого < 6 карт
         for(let i=0; i < this.players.length; i++) {
             while(this.players[pIdx].hand.length < count && this.deck.length > 0) {
                 this.players[pIdx].hand.push(this.deck.pop());
@@ -229,7 +224,6 @@ class DurakGame {
     }
 
     processTurn() {
-        // Если игра закончилась, прекращаем цикл
         if (!app.isGameActive) return;
 
         this.selectedCardIdx = null;
@@ -244,6 +238,7 @@ class DurakGame {
             else this.showMessage(`ХОДИТ ${attacker.name.toUpperCase()}`);
         }
 
+        // --- ВАЖНО: Запускаем ботов только если их очередь ---
         if (attacker.type === 'bot' && this.table.every(p => p.defend)) {
             setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
         } else if (defender.type === 'bot' && this.table.some(p => !p.defend)) {
@@ -251,16 +246,14 @@ class DurakGame {
         }
     }
 
-    // --- ЛОГИКА ---
     selectCard(idx) {
         if (this.players[0].type !== 'human') return;
         soundManager.playClick();
         if (this.selectedCardIdx === idx) {
             this.selectedCardIdx = null;
-            this.updateUI();
-            return;
+        } else {
+            this.selectedCardIdx = idx;
         }
-        this.selectedCardIdx = idx;
         this.updateUI();
     }
 
@@ -328,6 +321,10 @@ class DurakGame {
     // --- БОТЫ ---
     botAttack() {
         if (!app.isGameActive || this.attackerIdx === 0) return;
+        // --- ЗАЩИТА ОТ ГЛЮКА "БОТ ХОДИТ ЗА МЕНЯ" ---
+        // Бот не должен подкидывать, если на столе есть неотбитые карты (например, после перевода)
+        if (!this.table.every(p => p.defend) && this.table.length > 0) return;
+
         const bot = this.players[this.attackerIdx];
 
         if (this.table.length === 0) {
@@ -347,24 +344,24 @@ class DurakGame {
         if (tossIdx !== -1 && this.table.length < 6) {
             this.playCard(this.attackerIdx, tossIdx, 'attack');
         } else {
-            if (this.table.every(p => p.defend)) {
-                this.showMessage("БИТО!");
-                setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 2000);
-            }
+            this.showMessage("БИТО!");
+            setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 2000);
         }
     }
 
     botDefend() {
-        if (!app.isGameActive) return;
+        if (!app.isGameActive || this.defenderIdx === 0) return;
         const bot = this.players[this.defenderIdx];
         const attack = this.getLastUnbeaten();
         if (!attack) return;
 
+        // Попытка перевода
         if (this.gameMode === 'transfer' && this.table.every(p => !p.defend)) {
             const tIdx = bot.hand.findIndex(c => c.rank === attack.rank);
             if (tIdx !== -1) { this.playCard(this.defenderIdx, tIdx, 'transfer'); return; }
         }
 
+        // Защита
         let bestIdx = -1; let minVal = 100;
         bot.hand.forEach((c, i) => {
             if (this.canBeat(attack, c)) {
@@ -418,24 +415,19 @@ class DurakGame {
     endBout(took) {
         this.table = [];
         this.dealCards(6);
-        // Проверяем победу сразу после раздачи
-        if (this.checkWin()) return;
+        if (this.checkWin()) return; 
 
         if (took) this.attackerIdx = (this.defenderIdx + 1) % this.players.length;
         else this.attackerIdx = this.defenderIdx;
         this.defenderIdx = (this.attackerIdx + 1) % this.players.length;
-        
         this.processTurn();
     }
 
     checkWin() {
-        // 1. Игра продолжается, если в колоде есть карты
         if (this.deck.length > 0) return false;
 
-        // Колода пуста. Проверяем состояние игрока.
         const human = this.players[0];
-
-        // УСЛОВИЕ ПОБЕДЫ: У игрока кончились карты
+        // ПОБЕДА: У игрока кончились карты
         if (human.hand.length === 0) {
             app.isGameActive = false;
             soundManager.playWin();
@@ -447,9 +439,9 @@ class DurakGame {
             return true;
         }
 
-        // УСЛОВИЕ ПРОИГРЫША: У игрока есть карты, а у ВСЕХ ботов кончились
-        const activeBots = this.players.filter(p => p.id !== 0 && p.hand.length > 0);
-        if (activeBots.length === 0) {
+        // ПРОИГРЫШ: У игрока есть карты, а у всех активных ботов - нет
+        const botsWithCards = this.players.filter(p => p.id !== 0 && p.hand.length > 0);
+        if (botsWithCards.length === 0) {
             app.isGameActive = false;
             soundManager.playLose();
             setTimeout(() => {
@@ -459,7 +451,6 @@ class DurakGame {
             }, 500);
             return true;
         }
-
         return false;
     }
 
@@ -477,12 +468,8 @@ class DurakGame {
         });
         let active = this.attackerIdx;
         if(this.table.length > 0 && !this.table[this.table.length-1].defend) active = this.defenderIdx;
-        
         const p = this.players[active];
-        let sel = '';
-        if (p.id === 0) sel = '.name-tag.me';
-        else sel = `#${p.visualId} .name-tag`;
-
+        let sel = (p.id === 0) ? '.name-tag.me' : `#${p.visualId} .name-tag`;
         const el = document.querySelector(sel);
         if(el) el.classList.add('active-turn');
     }
@@ -497,7 +484,6 @@ class DurakGame {
 
         const mainBtn = document.getElementById('action-btn');
         const secBtn = document.getElementById('pass-btn');
-
         mainBtn.className = "main-btn";
         mainBtn.disabled = true;
         secBtn.classList.remove('visible');
@@ -521,7 +507,14 @@ class DurakGame {
             }
         } else if (this.defenderIdx === 0) {
             if (this.selectedCardIdx !== null) {
-                mainBtn.innerText = "ОТБИТЬСЯ ЭТОЙ";
+                // ПРОВЕРКА НА ПЕРЕВОД ДЛЯ UI
+                const card = this.players[0].hand[this.selectedCardIdx];
+                const canTransfer = (this.gameMode === 'transfer' && 
+                                     this.table.length > 0 && 
+                                     this.table.every(p => !p.defend) && 
+                                     card.rank === this.table[0].attack.rank);
+                
+                mainBtn.innerText = canTransfer ? "ПЕРЕВЕСТИ" : "ОТБИТЬСЯ ЭТОЙ";
                 mainBtn.classList.add('ready');
                 mainBtn.disabled = false;
             } else {
@@ -583,6 +576,5 @@ class DurakGame {
         </div>`;
     }
 }
-
 app.init();
 const game = new DurakGame();
