@@ -10,7 +10,7 @@ const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const RANK_NAMES = {'6':'6', '7':'7', '8':'8', '9':'9', '10':'10', 'J':'В', 'Q':'Д', 'K':'К', 'A':'Т'};
 const VALUES = {'6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14};
-const BOT_DELAY = 1500;
+const BOT_DELAY = 1500; 
 
 // --- ЗВУК ---
 const soundManager = {
@@ -66,13 +66,10 @@ const app = {
 
     init: function() {
         this.loadStats();
-        this.loadSettings(); // Загружаем сохраненные настройки (режим игры, звук)
+        this.loadSettings();
         this.checkSavedGame();
-        
         const el = document.getElementById('game-mode-select');
-        if(el) el.addEventListener('change', (e) => { 
-            this.setMode(e.target.value); 
-        });
+        if(el) el.addEventListener('change', (e) => { this.setMode(e.target.value); });
     },
 
     loadStats: function() {
@@ -83,7 +80,6 @@ const app = {
     },
 
     loadSettings: function() {
-        // Пробуем загрузить последние настройки
         storage.get('durak_settings_v1', (data) => {
             if (data) {
                 const s = JSON.parse(data);
@@ -93,9 +89,7 @@ const app = {
         });
     },
 
-    saveSettings: function() {
-        storage.set('durak_settings_v1', JSON.stringify(this.settings));
-    },
+    saveSettings: function() { storage.set('durak_settings_v1', JSON.stringify(this.settings)); },
 
     checkSavedGame: function() {
         storage.get('durak_save_v1', (data) => {
@@ -138,48 +132,17 @@ const app = {
     openSettings: function() { document.getElementById('settings-modal').classList.remove('hidden'); soundManager.init(); },
     closeSettings: function() { document.getElementById('settings-modal').classList.add('hidden'); soundManager.playClick(); },
     
-    setBotCount: function(n) { 
-        this.settings.botCount = n; 
-        this.saveSettings();
-        this.updateSettingsUI(); 
-        soundManager.playClick(); 
-    },
-    
-    setMode: function(m) { 
-        this.settings.mode = m; 
-        this.saveSettings();
-        this.updateSettingsUI(); 
-        soundManager.playClick(); 
-    },
-    
-    toggleSound: function() { 
-        this.settings.sound = !this.settings.sound; 
-        soundManager.enabled = this.settings.sound; 
-        if(this.settings.sound) soundManager.init(); 
-        this.saveSettings();
-        this.updateSettingsUI(); 
-        soundManager.playClick(); 
-    },
+    setBotCount: function(n) { this.settings.botCount = n; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+    setMode: function(m) { this.settings.mode = m; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+    toggleSound: function() { this.settings.sound = !this.settings.sound; soundManager.enabled = this.settings.sound; if(this.settings.sound) soundManager.init(); this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
 
     updateSettingsUI: function() {
-        // Обновляем кнопки ботов
         [1,2,3].forEach(n => {
             const btn = document.getElementById(`btn-bot-${n}`);
-            if(btn) {
-                if(n===this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active');
-            }
+            if(btn) { if(n===this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active'); }
         });
-
-        // Обновляем селект на главной
-        const sel = document.getElementById('game-mode-select');
-        if(sel) sel.value = this.settings.mode;
-
-        // Обновляем звук
-        const snd = document.getElementById('btn-sound');
-        if(snd) {
-            snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇";
-            snd.classList.toggle('active', this.settings.sound);
-        }
+        const sel = document.getElementById('game-mode-select'); if(sel) sel.value = this.settings.mode;
+        const snd = document.getElementById('btn-sound'); if(snd) { snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇"; snd.classList.toggle('active', this.settings.sound); }
     },
     
     startGame: function() {
@@ -456,15 +419,18 @@ class DurakGame {
         this.selectedCardIdx = null; 
         soundManager.playCard();
 
+        // 1. ПЕРЕВОД
         if (type === 'transfer') {
             this.table.push({ attack: card, defend: null });
             this.showMessage("ПЕРЕВОД!");
             this.attackerIdx = this.defenderIdx;
             this.defenderIdx = this.getNextActiveIndex(this.defenderIdx);
         } 
+        // 2. АТАКА
         else if (type === 'attack') {
             this.table.push({ attack: card, defend: null });
         } 
+        // 3. ЗАЩИТА
         else { 
             const pair = targetPair || this.table.find(p => !p.defend);
             if(pair) pair.defend = card;
@@ -473,7 +439,24 @@ class DurakGame {
         if (playerId === 0 && type === 'attack') this.playerPassedToss = false; 
 
         this.updateUI();
+
+        // --- ПРОВЕРКИ ПОСЛЕ ХОДА ---
+
+        // А. МГНОВЕННАЯ ПОБЕДА: если колода пуста и карт нет
+        if (this.deck.length === 0 && p.hand.length === 0) {
+            this.checkWin(); 
+            return;
+        }
+
+        // Б. ПРАВИЛО "НЕТ КАРТ - НЕТ ВЗЯТКИ": 
+        // Если защищающийся отбился и у него кончились карты - конец боя (БИТО)
+        // (При условии, что колода не пуста, иначе сработала бы победа выше)
+        if (type === 'defend' && p.hand.length === 0) {
+            setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
+            return;
+        }
         
+        // В. ПЕРЕХОД ХОДА БОТАМ
         if (type === 'transfer') {
              const newDef = this.players[this.defenderIdx];
              if (newDef.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
@@ -515,6 +498,14 @@ class DurakGame {
         if (!this.table.every(p => p.defend) && this.table.length > 0) return;
 
         const bot = this.players[this.attackerIdx];
+        const defender = this.players[this.defenderIdx];
+
+        // ВАЖНОЕ ПРАВИЛО: Не подкидывать игроку, у которого нет карт (и колода еще есть)
+        // Хотя в playCard мы делаем endBout, но на всякий случай
+        if (defender.hand.length === 0) {
+            this.endBout(false);
+            return;
+        }
 
         if (this.table.length === 0) {
             const idx = this.findMinCard(bot.hand);
@@ -530,13 +521,15 @@ class DurakGame {
             }
         });
 
-        if (tossIdx !== -1 && this.table.length < 6) {
+        if (tossIdx !== -1 && this.table.length < 6 && defender.hand.length > (this.table.length - this.table.filter(p=>p.defend).length)) {
+            // Проверка: нельзя подкинуть больше карт, чем есть у защищающегося
+            // (Упрощенно: если 6 карт уже на столе - не кидаем)
             this.botPlayCard(tossIdx, 'attack');
         } else {
             const player = this.players[0];
             const playerCanToss = !player.isOut && player.hand.some(c => this.canAttack(c));
             
-            if (playerCanToss && !this.playerPassedToss && this.defenderIdx !== 0) {
+            if (playerCanToss && !this.playerPassedToss && this.defenderIdx !== 0 && defender.hand.length > 0) {
                 this.updateUI(); 
                 return;
             }
@@ -593,6 +586,17 @@ class DurakGame {
         }
         
         this.updateUI();
+
+        // Проверка: если бот защищался и карты кончились
+        if (type === 'defend' && bot.hand.length === 0 && this.deck.length > 0) {
+             setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
+             return;
+        }
+        
+        if (this.deck.length === 0 && bot.hand.length === 0) {
+            this.checkWin();
+            return;
+        }
 
         if (type === 'transfer') {
              const newDef = this.players[this.defenderIdx];
@@ -763,6 +767,7 @@ class DurakGame {
                 mainBtn.classList.add('ready');
                 mainBtn.disabled = false;
             } else {
+                // ПОКАЗЫВАЕМ "НЕ БУДУ" ТОЛЬКО ЕСЛИ КАРТЫ ЕСТЬ
                 if (hasCard && !this.playerPassedToss && this.isTableCovered() && this.table.length > 0) {
                     mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ";
                     mainBtn.disabled = true; 
