@@ -6,6 +6,8 @@
     <title>Дурак</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Yandex Games SDK -->
+    <script src="https://sdk.games.s3.yandex.net/sdk.js"></script>
 </head>
 <body>
 
@@ -38,7 +40,7 @@
             
             <button class="menu-btn stats" onclick="app.showStats()">🏆 СЧЁТ</button>
             <button class="menu-btn settings" onclick="app.openSettings()">⚙ НАСТРОЙКИ</button>
-            <button class="menu-btn exit" onclick="app.exitGame()">✖ ВЫХОД</button>
+            <button class="menu-btn exit" id="btn-exit" onclick="app.exitGame()">✖ ВЫХОД</button>
         </div>
         <p class="version">Создал Henxed. Сборка: 28122025.222110</p>
     </div>

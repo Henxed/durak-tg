@@ -50,7 +50,7 @@ const storage = {
     },
     remove: function(key) {
         if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            tg.CloudStorage.removeItem(key, (err, del) => {});
+            tg.CloudStorage.setItem(key, '', (err, saved) => {}); // Устанавливаем пустую строку
         }
         localStorage.removeItem(key);
     }
@@ -58,189 +58,253 @@ const storage = {
 
 // --- APP ---
 const app = {
-    settings: { botCount: 3, mode: 'normal', sound: true, difficulty: 'hard' },
-    stats: { wins: 0, losses: 0, score: 0 },
-    savedGameState: null,
-    isGameActive: false,
+  settings: { botCount: 3, mode: "normal", sound: true, difficulty: "hard" },
+  stats: { wins: 0, losses: 0, score: 0 },
+  savedGameState: null,
+  isGameActive: false,
 
-    init: function() {
-        this.loadStats();
-        this.loadSettings();
-        this.checkSavedGame();
-        const el = document.getElementById('game-mode-select');
-        if(el) {
-            el.addEventListener('change', (e) => { 
-                if (this.checkGameSettingsChange()) {
-                    this.setMode(e.target.value); 
-                } else {
-                    el.value = this.settings.mode;
-                }
-            });
-        }
-        this.updateSettingsUI();
-    },
-
-    loadStats: function() {
-        storage.get('durak_stats', (data) => {
-            if(data) { this.stats = JSON.parse(data); if(!this.stats.score) this.stats.score = 0; }
-            this.updateMenuStats();
-        });
-    },
-
-    loadSettings: function() {
-        storage.get('durak_settings_v3', (data) => {
-            if (data) {
-                const s = JSON.parse(data);
-                this.settings = { ...this.settings, ...s };
-                if(!this.settings.difficulty) this.settings.difficulty = 'medium';
-            }
-            this.updateSettingsUI();
-        });
-    },
-
-    saveSettings: function() { storage.set('durak_settings_v3', JSON.stringify(this.settings)); },
-
-    checkSavedGame: function() {
-        storage.get('durak_save_v4', (data) => {
-            if (data && data !== "null" && data !== "") {
-                try {
-                    this.savedGameState = JSON.parse(data);
-                    document.getElementById('btn-continue').classList.remove('hidden');
-                    document.getElementById('btn-newgame').innerText = "▶ НОВАЯ ИГРА";
-                } catch(e) { this.clearSavedGame(); }
-            } else {
-                this.forceClearUI();
-            }
-        });
-    },
-
-    saveGame: function(gameStateStr) { if(!this.isGameActive) return; storage.set('durak_save_v4', gameStateStr); },
-    clearSavedGame: function() { storage.remove('durak_save_v4'); this.savedGameState = null; this.forceClearUI(); },
-    forceClearUI: function() { document.getElementById('btn-continue').classList.add('hidden'); document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ"; },
-
-    saveStats: function(isWin) {
-        if(isWin) { this.stats.wins++; this.stats.score += 100; } 
-        else { this.stats.losses++; this.stats.score = Math.max(0, this.stats.score - 50); }
-        storage.set('durak_stats', JSON.stringify(this.stats));
-        this.updateMenuStats();
-        this.clearSavedGame(); 
-    },
-
-    getRankName: function(score) {
-        if(score < 200) return "Новичок";
-        if(score < 500) return "Любитель";
-        if(score < 1000) return "Опытный";
-        if(score < 2000) return "Мастер";
-        if(score < 5000) return "Шулер";
-        return "Легенда";
-    },
-
-    updateMenuStats: function() {
-        const sc = document.getElementById('menu-score'); if(sc) sc.innerText = `${this.stats.score} очков`;
-        const rn = document.getElementById('menu-rank'); if(rn) rn.innerText = this.getRankName(this.stats.score);
-    },
-
-    openSettings: function() { document.getElementById('settings-modal').classList.remove('hidden'); soundManager.init(); },
-    closeSettings: function() { document.getElementById('settings-modal').classList.add('hidden'); soundManager.playClick(); },
-    
-    setBotCount: function(n) { 
+  init: function () {
+    this.loadStats();
+    this.loadSettings();
+    this.checkSavedGame();
+    const el = document.getElementById("game-mode-select");
+    if (el) {
+      el.addEventListener("change", (e) => {
         if (this.checkGameSettingsChange()) {
-            this.settings.botCount = n; 
-            this.saveSettings(); 
-            this.updateSettingsUI(); 
-            soundManager.playClick(); 
+          this.setMode(e.target.value);
+        } else {
+          el.value = this.settings.mode;
         }
-    },
-    setMode: function(m) { this.settings.mode = m; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
-    setDifficulty: function(d) { 
-        if (this.checkGameSettingsChange()) {
-            this.settings.difficulty = d; 
-            this.saveSettings(); 
-            this.updateSettingsUI(); 
-            soundManager.playClick(); 
-        }
-    },
-    toggleSound: function() { this.settings.sound = !this.settings.sound; soundManager.enabled = this.settings.sound; if(this.settings.sound) soundManager.init(); this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+      });
+    }
+    this.updateSettingsUI();
+  },
 
-    updateSettingsUI: function() {
-        [1,2,3].forEach(n => {
-            const btn = document.getElementById(`btn-bot-${n}`);
-            if(btn) { if(n===this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active'); }
-        });
-        
-        // Режим игры
-        const sel = document.getElementById('game-mode-select'); 
-        if(sel) sel.value = this.settings.mode;
-        
-        // Сложность
-        const diffBtns = ['easy', 'medium', 'hard'];
-        diffBtns.forEach(diff => {
-            const btn = document.getElementById(`btn-diff-${diff}`);
-            if(btn) {
-                if(diff === this.settings.difficulty) btn.classList.add('active');
-                else btn.classList.remove('active');
-            }
-        });
-        
-        // Звук
-        const snd = document.getElementById('btn-sound'); 
-        if(snd) { 
-            snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇"; 
-            snd.classList.toggle('active', this.settings.sound); 
+  loadStats: function () {
+    storage.get("durak_stats", (data) => {
+      if (data) {
+        this.stats = JSON.parse(data);
+        if (!this.stats.score) this.stats.score = 0;
+      }
+      this.updateMenuStats();
+    });
+  },
+
+  loadSettings: function () {
+    storage.get("durak_settings", (data) => {
+      if (data) {
+        const s = JSON.parse(data);
+        this.settings = { ...this.settings, ...s };
+        if (!this.settings.difficulty) this.settings.difficulty = "medium";
+      }
+      this.updateSettingsUI();
+    });
+  },
+
+  saveSettings: function () {
+    storage.set("durak_settings", JSON.stringify(this.settings));
+  },
+
+  checkSavedGame: function () {
+    storage.get("durak_save", (data) => {
+      if (data && data !== "null" && data !== "") {
+        try {
+          this.savedGameState = JSON.parse(data);
+          document.getElementById("btn-continue").classList.remove("hidden");
+          document.getElementById("btn-newgame").innerText = "▶ НОВАЯ ИГРА";
+        } catch (e) {
+          this.clearSavedGame();
         }
-    },
-    
-    startGame: function() {
-        if(this.savedGameState && !confirm("Начать новую игру? Текущее сохранение будет удалено.")) return;
-        soundManager.init();
+      } else {
+        this.forceClearUI();
+      }
+    });
+  },
+
+  saveGame: function (gameStateStr) {
+    if (!this.isGameActive) return;
+    storage.set("durak_save", gameStateStr);
+  },
+  clearSavedGame: function () {
+    storage.remove("durak_save");
+    this.savedGameState = null;
+    this.forceClearUI();
+  },
+  forceClearUI: function () {
+    document.getElementById("btn-continue").classList.add("hidden");
+    document.getElementById("btn-newgame").innerText = "▶ ИГРАТЬ";
+  },
+
+  saveStats: function (isWin) {
+    if (isWin) {
+      this.stats.wins++;
+      this.stats.score += 100;
+    } else {
+      this.stats.losses++;
+      this.stats.score = Math.max(0, this.stats.score - 50);
+    }
+    storage.set("durak_stats", JSON.stringify(this.stats));
+    this.updateMenuStats();
+    this.clearSavedGame();
+  },
+
+  getRankName: function (score) {
+    if (score < 200) return "Новичок";
+    if (score < 500) return "Любитель";
+    if (score < 1000) return "Опытный";
+    if (score < 2000) return "Мастер";
+    if (score < 5000) return "Шулер";
+    return "Легенда";
+  },
+
+  updateMenuStats: function () {
+    const sc = document.getElementById("menu-score");
+    if (sc) sc.innerText = `${this.stats.score} очков`;
+    const rn = document.getElementById("menu-rank");
+    if (rn) rn.innerText = this.getRankName(this.stats.score);
+  },
+
+  openSettings: function () {
+    document.getElementById("settings-modal").classList.remove("hidden");
+    soundManager.init();
+  },
+  closeSettings: function () {
+    document.getElementById("settings-modal").classList.add("hidden");
+    soundManager.playClick();
+  },
+
+  setBotCount: function (n) {
+    if (this.checkGameSettingsChange()) {
+      this.settings.botCount = n;
+      this.saveSettings();
+      this.updateSettingsUI();
+      soundManager.playClick();
+    }
+  },
+  setMode: function (m) {
+    this.settings.mode = m;
+    this.saveSettings();
+    this.updateSettingsUI();
+    soundManager.playClick();
+  },
+  setDifficulty: function (d) {
+    if (this.checkGameSettingsChange()) {
+      this.settings.difficulty = d;
+      this.saveSettings();
+      this.updateSettingsUI();
+      soundManager.playClick();
+    }
+  },
+  toggleSound: function () {
+    this.settings.sound = !this.settings.sound;
+    soundManager.enabled = this.settings.sound;
+    if (this.settings.sound) soundManager.init();
+    this.saveSettings();
+    this.updateSettingsUI();
+    soundManager.playClick();
+  },
+
+  updateSettingsUI: function () {
+    [1, 2, 3].forEach((n) => {
+      const btn = document.getElementById(`btn-bot-${n}`);
+      if (btn) {
+        if (n === this.settings.botCount) btn.classList.add("active");
+        else btn.classList.remove("active");
+      }
+    });
+
+    // Режим игры
+    const sel = document.getElementById("game-mode-select");
+    if (sel) sel.value = this.settings.mode;
+
+    // Сложность
+    const diffBtns = ["easy", "medium", "hard"];
+    diffBtns.forEach((diff) => {
+      const btn = document.getElementById(`btn-diff-${diff}`);
+      if (btn) {
+        if (diff === this.settings.difficulty) btn.classList.add("active");
+        else btn.classList.remove("active");
+      }
+    });
+
+    // Звук
+    const snd = document.getElementById("btn-sound");
+    if (snd) {
+      snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇";
+      snd.classList.toggle("active", this.settings.sound);
+    }
+  },
+
+  startGame: function () {
+    if (
+      this.savedGameState &&
+      !confirm("Начать новую игру? Текущее сохранение будет удалено.")
+    )
+      return;
+    soundManager.init();
+    this.clearSavedGame();
+    this.isGameActive = true;
+    document.getElementById("main-menu").classList.add("hidden");
+    document.getElementById("game-screen").classList.remove("hidden");
+    game.startNewGame(
+      this.settings.botCount,
+      this.settings.mode,
+      this.settings.difficulty
+    );
+    soundManager.playClick();
+  },
+
+  continueGame: function () {
+    if (!this.savedGameState) return;
+    soundManager.init();
+    this.isGameActive = true;
+    document.getElementById("main-menu").classList.add("hidden");
+    document.getElementById("game-screen").classList.remove("hidden");
+    game.loadFromState(this.savedGameState);
+    soundManager.playClick();
+  },
+
+  toMenu: function () {
+    if (this.isGameActive) {
+      if (!confirm("Выйти в меню? Прогресс будет потерян.")) return;
+      this.clearSavedGame();
+    }
+    this.isGameActive = false;
+    document.getElementById("game-screen").classList.add("hidden");
+    document.getElementById("main-menu").classList.remove("hidden");
+    this.checkSavedGame();
+  },
+  checkGameSettingsChange: function () {
+    if (this.savedGameState) {
+      if (
+        confirm(
+          "При изменении режима игры текущая сохраненная игра будет удалена. Продолжить?"
+        )
+      ) {
         this.clearSavedGame();
-        this.isGameActive = true;
-        document.getElementById('main-menu').classList.add('hidden');
-        document.getElementById('game-screen').classList.remove('hidden');
-        game.startNewGame(this.settings.botCount, this.settings.mode, this.settings.difficulty);
-        soundManager.playClick();
-    },
-
-    continueGame: function() {
-        if (!this.savedGameState) return;
-        soundManager.init();
-        this.isGameActive = true;
-        document.getElementById('main-menu').classList.add('hidden');
-        document.getElementById('game-screen').classList.remove('hidden');
-        game.loadFromState(this.savedGameState);
-        soundManager.playClick();
-    },
-
-    toMenu: function() {
-        if (this.isGameActive) {
-            if (!confirm("Выйти в меню? Прогресс будет потерян.")) return;
-            this.clearSavedGame();
-        }
-        this.isGameActive = false;
-        document.getElementById('game-screen').classList.add('hidden');
-        document.getElementById('main-menu').classList.remove('hidden');
-        this.checkSavedGame();
-    },
-    checkGameSettingsChange: function() {
-        if (this.savedGameState) {
-            if (confirm("При изменении режима игры текущая сохраненная игра будет удалена. Продолжить?")) {
-                this.clearSavedGame();
-                return true;
-            }
-            return false;
-        }
         return true;
-    },
-    exitGame: function() { tg.close(); },
-    showStats: function() {
-        document.getElementById('stat-wins').innerText = this.stats.wins;
-        document.getElementById('stat-losses').innerText = this.stats.losses;
-        document.getElementById('stat-score').innerText = this.stats.score;
-        document.getElementById('stat-rank').innerText = this.getRankName(this.stats.score);
-        document.getElementById('stats-modal').classList.remove('hidden');
-        soundManager.playClick();
-    },
-    closeStats: function() { document.getElementById('stats-modal').classList.add('hidden'); soundManager.playClick(); }
+      }
+      return false;
+    }
+    return true;
+  },
+  exitGame: function () {
+    tg.close();
+  },
+  showStats: function () {
+    document.getElementById("stat-wins").innerText = this.stats.wins;
+    document.getElementById("stat-losses").innerText = this.stats.losses;
+    document.getElementById("stat-score").innerText = this.stats.score;
+    document.getElementById("stat-rank").innerText = this.getRankName(
+      this.stats.score
+    );
+    document.getElementById("stats-modal").classList.remove("hidden");
+    soundManager.playClick();
+  },
+  closeStats: function () {
+    document.getElementById("stats-modal").classList.add("hidden");
+    soundManager.playClick();
+  },
 };
 
 class Card {
