@@ -10,7 +10,7 @@ const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const RANK_NAMES = {'6':'6', '7':'7', '8':'8', '9':'9', '10':'10', 'J':'В', 'Q':'Д', 'K':'К', 'A':'Т'};
 const VALUES = {'6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14};
-const BOT_DELAY = 1500; 
+const BOT_DELAY = 1500;
 
 // --- ЗВУК ---
 const soundManager = {
@@ -92,26 +92,43 @@ const app = {
     saveSettings: function() { storage.set('durak_settings_v1', JSON.stringify(this.settings)); },
 
     checkSavedGame: function() {
+        // Скрываем кнопки пока идет проверка
+        document.getElementById('btn-continue').classList.add('hidden');
+        
         storage.get('durak_save_v1', (data) => {
-            if (data) {
+            if (data && data !== "null") {
                 this.savedGameState = JSON.parse(data);
                 document.getElementById('btn-continue').classList.remove('hidden');
                 document.getElementById('btn-newgame').innerText = "▶ НОВАЯ ИГРА";
             } else {
+                this.savedGameState = null;
                 document.getElementById('btn-continue').classList.add('hidden');
                 document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ";
             }
         });
     },
 
-    saveGame: function(gameStateStr) { storage.set('durak_save_v1', gameStateStr); },
-    clearSavedGame: function() { storage.remove('durak_save_v1'); this.savedGameState = null; },
+    saveGame: function(gameStateStr) { 
+        if(!this.isGameActive) return; // Не сохранять, если игра закончена
+        storage.set('durak_save_v1', gameStateStr); 
+    },
+
+    clearSavedGame: function() {
+        storage.remove('durak_save_v1');
+        this.savedGameState = null;
+        // Визуально убираем кнопку сразу
+        document.getElementById('btn-continue').classList.add('hidden');
+        document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ";
+    },
 
     saveStats: function(isWin) {
         if(isWin) { this.stats.wins++; this.stats.score += 100; } 
         else { this.stats.losses++; this.stats.score = Math.max(0, this.stats.score - 50); }
+        
         storage.set('durak_stats_v8', JSON.stringify(this.stats));
         this.updateMenuStats();
+        
+        // ВАЖНО: Удаляем сохранение
         this.clearSavedGame(); 
     },
 
@@ -148,7 +165,7 @@ const app = {
     startGame: function() {
         if(this.savedGameState && !confirm("Начать новую игру? Текущее сохранение будет удалено.")) return;
         soundManager.init();
-        this.clearSavedGame();
+        this.clearSavedGame(); // Гарантированно чистим перед стартом
         this.isGameActive = true;
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
@@ -166,7 +183,8 @@ const app = {
         soundManager.playClick();
     },
 
-    toMenu: function() {
+    // skipCheck - если true, не проверяем сохранение (мы знаем, что оно удалено)
+    toMenu: function(skipCheck = false) {
         if (this.isGameActive) {
             if (!confirm("Выйти в меню? Текущая игра будет потеряна.")) return;
             this.clearSavedGame();
@@ -174,7 +192,8 @@ const app = {
         this.isGameActive = false;
         document.getElementById('game-screen').classList.add('hidden');
         document.getElementById('main-menu').classList.remove('hidden');
-        this.checkSavedGame();
+        
+        if(!skipCheck) this.checkSavedGame();
     },
     
     exitGame: function() { tg.close(); },
@@ -255,6 +274,7 @@ class DurakGame {
     }
 
     saveGameState() {
+        if(!app.isGameActive) return; // НЕ СОХРАНЯТЬ ЕСЛИ ИГРА ЗАВЕРШЕНА
         const state = {
             gameMode: this.gameMode,
             players: this.players,
@@ -360,7 +380,7 @@ class DurakGame {
             this.showMessage(att.id===0 ? "ВАШ ХОД" : `ХОДИТ ${att.name.toUpperCase()}`);
         }
 
-        this.saveGameState(); 
+        this.saveGameState(); // Автосейв
 
         if(att.type==='bot' && this.table.every(p=>p.defend)) {
             setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
@@ -440,17 +460,13 @@ class DurakGame {
 
         this.updateUI();
 
-        // --- ПРОВЕРКИ ПОСЛЕ ХОДА ---
-
-        // А. МГНОВЕННАЯ ПОБЕДА: если колода пуста и карт нет
+        // А. МГНОВЕННАЯ ПОБЕДА
         if (this.deck.length === 0 && p.hand.length === 0) {
             this.checkWin(); 
             return;
         }
 
-        // Б. ПРАВИЛО "НЕТ КАРТ - НЕТ ВЗЯТКИ": 
-        // Если защищающийся отбился и у него кончились карты - конец боя (БИТО)
-        // (При условии, что колода не пуста, иначе сработала бы победа выше)
+        // Б. ПРАВИЛО "НЕТ КАРТ - НЕТ ВЗЯТКИ"
         if (type === 'defend' && p.hand.length === 0) {
             setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
             return;
@@ -677,7 +693,7 @@ class DurakGame {
         
         if (human.isOut) {
             app.isGameActive = false; soundManager.playWin();
-            setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(); }, 500);
+            setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(true); }, 500);
             return true;
         }
 
@@ -685,7 +701,7 @@ class DurakGame {
         if (activeCount <= 1) {
             if (!human.isOut) {
                 app.isGameActive = false; soundManager.playLose();
-                setTimeout(() => { alert("Вы дурак! (-50 очков)"); app.saveStats(false); app.toMenu(); }, 500);
+                setTimeout(() => { alert("Вы дурак! (-50 очков)"); app.saveStats(false); app.toMenu(true); }, 500);
                 return true;
             }
         }
@@ -767,7 +783,6 @@ class DurakGame {
                 mainBtn.classList.add('ready');
                 mainBtn.disabled = false;
             } else {
-                // ПОКАЗЫВАЕМ "НЕ БУДУ" ТОЛЬКО ЕСЛИ КАРТЫ ЕСТЬ
                 if (hasCard && !this.playerPassedToss && this.isTableCovered() && this.table.length > 0) {
                     mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ";
                     mainBtn.disabled = true; 
