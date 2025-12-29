@@ -70,6 +70,7 @@ const app = {
         this.checkSavedGame();
         const el = document.getElementById('game-mode-select');
         if(el) el.addEventListener('change', (e) => { this.setMode(e.target.value); });
+        this.updateSettingsUI();
     },
 
     loadStats: function() {
@@ -92,31 +93,33 @@ const app = {
     saveSettings: function() { storage.set('durak_settings_v1', JSON.stringify(this.settings)); },
 
     checkSavedGame: function() {
-        // Скрываем кнопки пока идет проверка
-        document.getElementById('btn-continue').classList.add('hidden');
-        
-        storage.get('durak_save_v1', (data) => {
-            if (data && data !== "null") {
-                this.savedGameState = JSON.parse(data);
-                document.getElementById('btn-continue').classList.remove('hidden');
-                document.getElementById('btn-newgame').innerText = "▶ НОВАЯ ИГРА";
+        storage.get('durak_save_v2', (data) => {
+            if (data && data !== "null" && data !== "") {
+                try {
+                    this.savedGameState = JSON.parse(data);
+                    document.getElementById('btn-continue').classList.remove('hidden');
+                    document.getElementById('btn-newgame').innerText = "▶ НОВАЯ ИГРА";
+                } catch(e) {
+                    this.clearSavedGame();
+                }
             } else {
-                this.savedGameState = null;
-                document.getElementById('btn-continue').classList.add('hidden');
-                document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ";
+                this.forceClearUI();
             }
         });
     },
 
     saveGame: function(gameStateStr) { 
-        if(!this.isGameActive) return; // Не сохранять, если игра закончена
-        storage.set('durak_save_v1', gameStateStr); 
+        if(!this.isGameActive) return; 
+        storage.set('durak_save_v2', gameStateStr); 
     },
 
     clearSavedGame: function() {
-        storage.remove('durak_save_v1');
+        storage.remove('durak_save_v2');
         this.savedGameState = null;
-        // Визуально убираем кнопку сразу
+        this.forceClearUI();
+    },
+
+    forceClearUI: function() {
         document.getElementById('btn-continue').classList.add('hidden');
         document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ";
     },
@@ -127,8 +130,6 @@ const app = {
         
         storage.set('durak_stats_v8', JSON.stringify(this.stats));
         this.updateMenuStats();
-        
-        // ВАЖНО: Удаляем сохранение
         this.clearSavedGame(); 
     },
 
@@ -148,7 +149,6 @@ const app = {
 
     openSettings: function() { document.getElementById('settings-modal').classList.remove('hidden'); soundManager.init(); },
     closeSettings: function() { document.getElementById('settings-modal').classList.add('hidden'); soundManager.playClick(); },
-    
     setBotCount: function(n) { this.settings.botCount = n; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
     setMode: function(m) { this.settings.mode = m; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
     toggleSound: function() { this.settings.sound = !this.settings.sound; soundManager.enabled = this.settings.sound; if(this.settings.sound) soundManager.init(); this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
@@ -165,7 +165,7 @@ const app = {
     startGame: function() {
         if(this.savedGameState && !confirm("Начать новую игру? Текущее сохранение будет удалено.")) return;
         soundManager.init();
-        this.clearSavedGame(); // Гарантированно чистим перед стартом
+        this.clearSavedGame();
         this.isGameActive = true;
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
@@ -183,8 +183,7 @@ const app = {
         soundManager.playClick();
     },
 
-    // skipCheck - если true, не проверяем сохранение (мы знаем, что оно удалено)
-    toMenu: function(skipCheck = false) {
+    toMenu: function() {
         if (this.isGameActive) {
             if (!confirm("Выйти в меню? Текущая игра будет потеряна.")) return;
             this.clearSavedGame();
@@ -192,8 +191,7 @@ const app = {
         this.isGameActive = false;
         document.getElementById('game-screen').classList.add('hidden');
         document.getElementById('main-menu').classList.remove('hidden');
-        
-        if(!skipCheck) this.checkSavedGame();
+        this.checkSavedGame();
     },
     
     exitGame: function() { tg.close(); },
@@ -274,7 +272,7 @@ class DurakGame {
     }
 
     saveGameState() {
-        if(!app.isGameActive) return; // НЕ СОХРАНЯТЬ ЕСЛИ ИГРА ЗАВЕРШЕНА
+        if(!app.isGameActive) return; 
         const state = {
             gameMode: this.gameMode,
             players: this.players,
@@ -316,7 +314,12 @@ class DurakGame {
     createDeck() {
         this.deck = [];
         for(let s of SUITS) for(let r of RANKS) this.deck.push(new Card(s, r));
-        this.deck.sort(()=>Math.random()-0.5);
+        
+        for (let i = this.deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+        }
+        
         this.trump = this.deck[0];
     }
 
@@ -380,7 +383,7 @@ class DurakGame {
             this.showMessage(att.id===0 ? "ВАШ ХОД" : `ХОДИТ ${att.name.toUpperCase()}`);
         }
 
-        this.saveGameState(); // Автосейв
+        this.saveGameState(); 
 
         if(att.type==='bot' && this.table.every(p=>p.defend)) {
             setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
@@ -418,9 +421,15 @@ class DurakGame {
             if(this.gameMode === 'transfer' && this.table.length > 0 && this.table.every(p => !p.defend) && card.rank === this.table[0].attack.rank) {
                 this.playCard(0, cardIdx, 'transfer');
             } else {
-                const targetPair = this.table.find(p => !p.defend && this.canBeat(p.attack, card));
-                if(targetPair) this.playCard(0, cardIdx, 'defend', targetPair);
-                else { this.showMessage("ЭТОЙ НЕ ПОБИТЬ"); this.selectedCardIdx = null; this.updateUI(); }
+                // ИСПОЛЬЗУЕМ УМНЫЙ ПОИСК ЦЕЛИ
+                const targetPair = this.findBestTarget(card);
+                if(targetPair) {
+                    this.playCard(0, cardIdx, 'defend', targetPair);
+                } else {
+                    this.showMessage("ЭТОЙ НЕ ПОБИТЬ");
+                    this.selectedCardIdx = null; 
+                    this.updateUI();
+                }
             }
         }
         else {
@@ -430,6 +439,38 @@ class DurakGame {
                 this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
             }
         }
+    }
+
+    // --- УМНЫЙ ПОИСК (Приоритет: масть > козырь против козыря > козырь против простой) ---
+    findBestTarget(card) {
+        // 1. Ищем все пары, которые эта карта может побить
+        const candidates = this.table.filter(p => !p.defend && this.canBeat(p.attack, card));
+
+        if (candidates.length === 0) return null;
+        if (candidates.length === 1) return candidates[0];
+
+        // 2. Сортируем кандидатов по приоритету
+        candidates.sort((a, b) => {
+            // Приоритет 1: Совпадение масти (идеал)
+            const aSuitMatch = (a.attack.suit === card.suit);
+            const bSuitMatch = (b.attack.suit === card.suit);
+            if (aSuitMatch && !bSuitMatch) return -1;
+            if (!aSuitMatch && bSuitMatch) return 1;
+
+            // Приоритет 2: Козырь бьет козырь (если совпадения нет)
+            // Если выбранная карта козырь, предпочитаем бить козырную атаку, а не простую
+            if (card.suit === this.trump.suit) {
+                const aIsTrump = (a.attack.suit === this.trump.suit);
+                const bIsTrump = (b.attack.suit === this.trump.suit);
+                if (aIsTrump && !bIsTrump) return -1; 
+                if (!aIsTrump && bIsTrump) return 1;
+            }
+
+            // Приоритет 3 (второстепенный): Старшинство атаки (бьем самую крупную из доступных)
+            return b.attack.value - a.attack.value;
+        });
+
+        return candidates[0];
     }
 
     playCard(playerId, cardIdx, type, targetPair = null) {
@@ -538,8 +579,6 @@ class DurakGame {
         });
 
         if (tossIdx !== -1 && this.table.length < 6 && defender.hand.length > (this.table.length - this.table.filter(p=>p.defend).length)) {
-            // Проверка: нельзя подкинуть больше карт, чем есть у защищающегося
-            // (Упрощенно: если 6 карт уже на столе - не кидаем)
             this.botPlayCard(tossIdx, 'attack');
         } else {
             const player = this.players[0];
@@ -603,7 +642,6 @@ class DurakGame {
         
         this.updateUI();
 
-        // Проверка: если бот защищался и карты кончились
         if (type === 'defend' && bot.hand.length === 0 && this.deck.length > 0) {
              setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
              return;
@@ -633,7 +671,6 @@ class DurakGame {
         }
     }
 
-    // --- HELPERS ---
     canAttack(c) {
         if (this.table.length === 0) return true;
         const ranks = new Set();
@@ -693,7 +730,7 @@ class DurakGame {
         
         if (human.isOut) {
             app.isGameActive = false; soundManager.playWin();
-            setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(true); }, 500);
+            setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(); }, 500);
             return true;
         }
 
@@ -701,7 +738,7 @@ class DurakGame {
         if (activeCount <= 1) {
             if (!human.isOut) {
                 app.isGameActive = false; soundManager.playLose();
-                setTimeout(() => { alert("Вы дурак! (-50 очков)"); app.saveStats(false); app.toMenu(true); }, 500);
+                setTimeout(() => { alert("Вы дурак! (-50 очков)"); app.saveStats(false); app.toMenu(); }, 500);
                 return true;
             }
         }
@@ -756,7 +793,10 @@ class DurakGame {
                     else {
                         const hasCard = this.players[0].hand.some(c => this.canAttack(c));
                         if(hasCard) mainBtn.innerText = "ПОДКИДЫВАЙТЕ КАРТУ";
-                        else { mainBtn.innerText = "ЖМИТЕ БИТО ->"; mainBtn.disabled = true; }
+                        else { 
+                            mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ ИЛИ БИТО ->"; 
+                            mainBtn.disabled = true; 
+                        }
                     }
                 }
             }
