@@ -68,12 +68,20 @@ const app = {
         this.loadSettings();
         this.checkSavedGame();
         const el = document.getElementById('game-mode-select');
-        if(el) el.addEventListener('change', (e) => { this.setMode(e.target.value); });
+        if(el) {
+            el.addEventListener('change', (e) => { 
+                if (this.checkGameSettingsChange()) {
+                    this.setMode(e.target.value); 
+                } else {
+                    el.value = this.settings.mode;
+                }
+            });
+        }
         this.updateSettingsUI();
     },
 
     loadStats: function() {
-        storage.get('durak_stats_v9', (data) => {
+        storage.get('durak_stats', (data) => {
             if(data) { this.stats = JSON.parse(data); if(!this.stats.score) this.stats.score = 0; }
             this.updateMenuStats();
         });
@@ -113,7 +121,7 @@ const app = {
     saveStats: function(isWin) {
         if(isWin) { this.stats.wins++; this.stats.score += 100; } 
         else { this.stats.losses++; this.stats.score = Math.max(0, this.stats.score - 50); }
-        storage.set('durak_stats_v9', JSON.stringify(this.stats));
+        storage.set('durak_stats', JSON.stringify(this.stats));
         this.updateMenuStats();
         this.clearSavedGame(); 
     },
@@ -135,9 +143,23 @@ const app = {
     openSettings: function() { document.getElementById('settings-modal').classList.remove('hidden'); soundManager.init(); },
     closeSettings: function() { document.getElementById('settings-modal').classList.add('hidden'); soundManager.playClick(); },
     
-    setBotCount: function(n) { this.settings.botCount = n; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+    setBotCount: function(n) { 
+        if (this.checkGameSettingsChange()) {
+            this.settings.botCount = n; 
+            this.saveSettings(); 
+            this.updateSettingsUI(); 
+            soundManager.playClick(); 
+        }
+    },
     setMode: function(m) { this.settings.mode = m; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
-    setDifficulty: function(d) { this.settings.difficulty = d; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+    setDifficulty: function(d) { 
+        if (this.checkGameSettingsChange()) {
+            this.settings.difficulty = d; 
+            this.saveSettings(); 
+            this.updateSettingsUI(); 
+            soundManager.playClick(); 
+        }
+    },
     toggleSound: function() { this.settings.sound = !this.settings.sound; soundManager.enabled = this.settings.sound; if(this.settings.sound) soundManager.init(); this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
 
     updateSettingsUI: function() {
@@ -145,15 +167,31 @@ const app = {
             const btn = document.getElementById(`btn-bot-${n}`);
             if(btn) { if(n===this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active'); }
         });
-        // Режим игры теперь в select, обновляем его
+        
+        // Режим игры
         const sel = document.getElementById('game-mode-select'); 
         if(sel) sel.value = this.settings.mode;
-
-        const snd = document.getElementById('btn-sound'); if(snd) { snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇"; snd.classList.toggle('active', this.settings.sound); }
+        
+        // Сложность
+        const diffBtns = ['easy', 'medium', 'hard'];
+        diffBtns.forEach(diff => {
+            const btn = document.getElementById(`btn-diff-${diff}`);
+            if(btn) {
+                if(diff === this.settings.difficulty) btn.classList.add('active');
+                else btn.classList.remove('active');
+            }
+        });
+        
+        // Звук
+        const snd = document.getElementById('btn-sound'); 
+        if(snd) { 
+            snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇"; 
+            snd.classList.toggle('active', this.settings.sound); 
+        }
     },
     
     startGame: function() {
-        if(this.savedGameState && !confirm("Начать новую игру?")) return;
+        if(this.savedGameState && !confirm("Начать новую игру? Текущее сохранение будет удалено.")) return;
         soundManager.init();
         this.clearSavedGame();
         this.isGameActive = true;
@@ -183,7 +221,16 @@ const app = {
         document.getElementById('main-menu').classList.remove('hidden');
         this.checkSavedGame();
     },
-    
+    checkGameSettingsChange: function() {
+        if (this.savedGameState) {
+            if (confirm("При изменении режима игры текущая сохраненная игра будет удалена. Продолжить?")) {
+                this.clearSavedGame();
+                return true;
+            }
+            return false;
+        }
+        return true;
+    },
     exitGame: function() { tg.close(); },
     showStats: function() {
         document.getElementById('stat-wins').innerText = this.stats.wins;
@@ -219,6 +266,8 @@ class DurakGame {
         this.difficulty = diff;
         this.playerPassedToss = false;
         this.isTaking = false;
+        this.table = [];
+        this.selectedCardIdx = null;
         this.players = [{ id:0, visualId:'me', type:'human', name:"Вы", hand:[], isOut: false }];
         
         const botNames = ["Женя", "Лиза", "Коля"];
@@ -431,7 +480,7 @@ class DurakGame {
     }
 
     // --- БОТЫ ---
-    botAttack() {
+   botAttack() {
         if (!app.isGameActive || this.attackerIdx === 0) return;
         if (!this.isTaking && !this.table.every(p => p.defend) && this.table.length > 0) return;
 
@@ -464,11 +513,51 @@ class DurakGame {
             const player = this.players[0];
             const playerCanToss = !player.isOut && player.hand.some(c => this.canAttack(c));
             
+            // ИСПРАВЛЕНИЕ: Добавляем проверку на playerPassedToss
             if (playerCanToss && !this.playerPassedToss && this.defenderIdx !== 0 && defender.hand.length > 0) {
-                this.updateUI(); 
+                // Ждем хода игрока
+                this.showMessage("ИГРОК МОЖЕТ ПОДКИНУТЬ");
                 return;
             }
 
+            // Если игрок уже сказал "не буду" или не может подкинуть,
+            // проверяем, могут ли подкинуть другие боты
+            if (!this.playerPassedToss) {
+                // Проверяем других ботов (не текущего атакующего и не защищающегося)
+                let otherBotCanToss = false;
+                for (let i = 1; i < this.players.length; i++) {
+                    if (i !== this.attackerIdx && i !== this.defenderIdx && !this.players[i].isOut) {
+                        const otherBot = this.players[i];
+                        if (otherBot.hand.some(c => this.canAttack(c))) {
+                            otherBotCanToss = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (otherBotCanToss) {
+                    // Ждем, пока другие боты решат подкинуть или нет
+                    // В реальной игре здесь должен быть ход следующего бота
+                    // Упрощенно - просто продолжаем
+                    this.showMessage("СОПЕРНИКИ РЕШАЮТ...");
+                    // Имитируем задержку и передаем ход следующему боту
+                    setTimeout(() => {
+                        if(app.isGameActive) {
+                            // Здесь должна быть логика передачи хода следующему боту
+                            // Пока просто продолжаем защиту/взятие
+                            if (this.isTaking) {
+                                this.takeCards(this.defenderIdx);
+                            } else {
+                                this.showMessage("БИТО!");
+                                setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 1500);
+                            }
+                        }
+                    }, BOT_DELAY);
+                    return;
+                }
+            }
+
+            // Если никто не может/не хочет подкидывать
             if (this.isTaking) {
                 this.takeCards(this.defenderIdx);
             } else {
@@ -711,11 +800,76 @@ class DurakGame {
         } else {
             this.playerPassedToss = true;
             this.updateUI();
-            if (this.isTaking) {
-                 const att = this.players[this.attackerIdx];
-                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 500);
+            
+            // ИСПРАВЛЕНИЕ: После того как игрок сказал "не буду",
+            // нужно проверить, есть ли другие игроки (боты), которые могут подкинуть
+            // Если нет - перейти к защите/взятию
+            
+            // Проверяем, есть ли боты, которые могут подкинуть
+            let anyBotCanToss = false;
+            for (let i = 1; i < this.players.length; i++) {
+                if (i !== this.defenderIdx && !this.players[i].isOut) {
+                    const bot = this.players[i];
+                    if (bot.hand.some(c => this.canAttack(c))) {
+                        anyBotCanToss = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Если никто не может подкинуть или все пасовали, заканчиваем подкидывание
+            if (!anyBotCanToss || this.playerPassedToss) {
+                // Если есть неотбитые карты - защищающийся должен отбиваться или брать
+                if (!this.isTableCovered()) {
+                    const def = this.players[this.defenderIdx];
+                    if (def.type === 'bot') {
+                        setTimeout(() => { 
+                            if(app.isGameActive) this.botDefend(); 
+                        }, BOT_DELAY);
+                    }
+                } else {
+                    // Все карты отбиты - можно закончить раунд
+                    setTimeout(() => { 
+                        if(app.isGameActive) this.endBout(false); 
+                    }, BOT_DELAY);
+                }
+            } else {
+                // Если есть другие боты, которые могут подкинуть - передаем ход им
+                // Нужно найти следующего бота после игрока, который может подкинуть
+                let nextBotIndex = -1;
+                for (let i = 1; i < this.players.length; i++) {
+                    if (i !== this.defenderIdx && !this.players[i].isOut) {
+                        const bot = this.players[i];
+                        if (bot.hand.some(c => this.canAttack(c))) {
+                            nextBotIndex = i;
+                            break;
+                        }
+                    }
+                }
+                
+                if (nextBotIndex !== -1) {
+                    // Сохраняем текущего атакующего для возможности боту подкинуть
+                    const currentAttacker = this.players[this.attackerIdx];
+                    if (currentAttacker.type === 'bot') {
+                        setTimeout(() => { 
+                            if(app.isGameActive) this.botAttack(); 
+                        }, BOT_DELAY);
+                    }
+                }
             }
         }
+    }
+
+    canAnyBotToss() {
+        for (let i = 1; i < this.players.length; i++) {
+            if (i !== this.defenderIdx && !this.players[i].isOut) {
+                const bot = this.players[i];
+                if (bot.hand.some(c => this.canAttack(c))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     canAttack(c) {
@@ -747,7 +901,7 @@ class DurakGame {
 
     endBout(took) {
         this.table = [];
-        this.playerPassedToss = false; 
+        this.playerPassedToss = false;
         this.isTaking = false;
         this.updateStatus(); 
         this.dealCards(6);
@@ -860,7 +1014,7 @@ class DurakGame {
             } else {
                 if (hasCard && !this.playerPassedToss && (this.isTableCovered() || this.isTaking) && this.table.length > 0) {
                     mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ"; mainBtn.disabled = true; secBtn.innerText = "НЕ БУДУ"; secBtn.classList.add('visible');
-                } else { mainBtn.innerText = "ХОДЯТ БОТЫ..."; }
+                } else { mainBtn.innerText = "ХОДЯТ СОПЕРНИКИ..."; }
             }
         }
 
