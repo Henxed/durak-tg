@@ -47,6 +47,15 @@
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content large-modal">
             <h2>Настройки</h2>
+
+            <div class="setting-block">
+                <label>Сложность:</label>
+                <div class="toggle-group">
+                    <button class="toggle-btn" onclick="app.setDifficulty('easy')" id="btn-diff-easy">Легко</button>
+                    <button class="toggle-btn" onclick="app.setDifficulty('medium')" id="btn-diff-medium">Норм</button>
+                    <button class="toggle-btn active" onclick="app.setDifficulty('hard')" id="btn-diff-hard">Про</button>
+                </div>
+            </div>
             
             <div class="setting-block">
                 <label>Количество соперников:</label>

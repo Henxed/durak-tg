@@ -1,7 +1,6 @@
 const tg = window.Telegram.WebApp;
 tg.expand();
 
-// Проверка версии для цвета шапки
 if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.1')) {
     tg.setHeaderColor('#2e7d32');
 }
@@ -59,7 +58,7 @@ const storage = {
 
 // --- APP ---
 const app = {
-    settings: { botCount: 3, mode: 'normal', sound: true },
+    settings: { botCount: 3, mode: 'normal', sound: true, difficulty: 'hard' },
     stats: { wins: 0, losses: 0, score: 0 },
     savedGameState: null,
     isGameActive: false,
@@ -74,61 +73,47 @@ const app = {
     },
 
     loadStats: function() {
-        storage.get('durak_stats_v8', (data) => {
+        storage.get('durak_stats_v9', (data) => {
             if(data) { this.stats = JSON.parse(data); if(!this.stats.score) this.stats.score = 0; }
             this.updateMenuStats();
         });
     },
 
     loadSettings: function() {
-        storage.get('durak_settings_v1', (data) => {
+        storage.get('durak_settings_v3', (data) => {
             if (data) {
                 const s = JSON.parse(data);
                 this.settings = { ...this.settings, ...s };
+                if(!this.settings.difficulty) this.settings.difficulty = 'medium';
             }
             this.updateSettingsUI();
         });
     },
 
-    saveSettings: function() { storage.set('durak_settings_v1', JSON.stringify(this.settings)); },
+    saveSettings: function() { storage.set('durak_settings_v3', JSON.stringify(this.settings)); },
 
     checkSavedGame: function() {
-        storage.get('durak_save_v2', (data) => {
+        storage.get('durak_save_v4', (data) => {
             if (data && data !== "null" && data !== "") {
                 try {
                     this.savedGameState = JSON.parse(data);
                     document.getElementById('btn-continue').classList.remove('hidden');
                     document.getElementById('btn-newgame').innerText = "▶ НОВАЯ ИГРА";
-                } catch(e) {
-                    this.clearSavedGame();
-                }
+                } catch(e) { this.clearSavedGame(); }
             } else {
                 this.forceClearUI();
             }
         });
     },
 
-    saveGame: function(gameStateStr) { 
-        if(!this.isGameActive) return; 
-        storage.set('durak_save_v2', gameStateStr); 
-    },
-
-    clearSavedGame: function() {
-        storage.remove('durak_save_v2');
-        this.savedGameState = null;
-        this.forceClearUI();
-    },
-
-    forceClearUI: function() {
-        document.getElementById('btn-continue').classList.add('hidden');
-        document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ";
-    },
+    saveGame: function(gameStateStr) { if(!this.isGameActive) return; storage.set('durak_save_v4', gameStateStr); },
+    clearSavedGame: function() { storage.remove('durak_save_v4'); this.savedGameState = null; this.forceClearUI(); },
+    forceClearUI: function() { document.getElementById('btn-continue').classList.add('hidden'); document.getElementById('btn-newgame').innerText = "▶ ИГРАТЬ"; },
 
     saveStats: function(isWin) {
         if(isWin) { this.stats.wins++; this.stats.score += 100; } 
         else { this.stats.losses++; this.stats.score = Math.max(0, this.stats.score - 50); }
-        
-        storage.set('durak_stats_v8', JSON.stringify(this.stats));
+        storage.set('durak_stats_v9', JSON.stringify(this.stats));
         this.updateMenuStats();
         this.clearSavedGame(); 
     },
@@ -149,8 +134,10 @@ const app = {
 
     openSettings: function() { document.getElementById('settings-modal').classList.remove('hidden'); soundManager.init(); },
     closeSettings: function() { document.getElementById('settings-modal').classList.add('hidden'); soundManager.playClick(); },
+    
     setBotCount: function(n) { this.settings.botCount = n; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
     setMode: function(m) { this.settings.mode = m; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
+    setDifficulty: function(d) { this.settings.difficulty = d; this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
     toggleSound: function() { this.settings.sound = !this.settings.sound; soundManager.enabled = this.settings.sound; if(this.settings.sound) soundManager.init(); this.saveSettings(); this.updateSettingsUI(); soundManager.playClick(); },
 
     updateSettingsUI: function() {
@@ -158,18 +145,21 @@ const app = {
             const btn = document.getElementById(`btn-bot-${n}`);
             if(btn) { if(n===this.settings.botCount) btn.classList.add('active'); else btn.classList.remove('active'); }
         });
-        const sel = document.getElementById('game-mode-select'); if(sel) sel.value = this.settings.mode;
+        // Режим игры теперь в select, обновляем его
+        const sel = document.getElementById('game-mode-select'); 
+        if(sel) sel.value = this.settings.mode;
+
         const snd = document.getElementById('btn-sound'); if(snd) { snd.innerText = this.settings.sound ? "ВКЛЮЧЕН 🔊" : "ВЫКЛЮЧЕН 🔇"; snd.classList.toggle('active', this.settings.sound); }
     },
     
     startGame: function() {
-        if(this.savedGameState && !confirm("Начать новую игру? Текущее сохранение будет удалено.")) return;
+        if(this.savedGameState && !confirm("Начать новую игру?")) return;
         soundManager.init();
         this.clearSavedGame();
         this.isGameActive = true;
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('game-screen').classList.remove('hidden');
-        game.startNewGame(this.settings.botCount, this.settings.mode);
+        game.startNewGame(this.settings.botCount, this.settings.mode, this.settings.difficulty);
         soundManager.playClick();
     },
 
@@ -185,7 +175,7 @@ const app = {
 
     toMenu: function() {
         if (this.isGameActive) {
-            if (!confirm("Выйти в меню? Текущая игра будет потеряна.")) return;
+            if (!confirm("Выйти в меню? Прогресс будет потерян.")) return;
             this.clearSavedGame();
         }
         this.isGameActive = false;
@@ -219,12 +209,16 @@ class DurakGame {
         this.attackerIdx = 0; this.defenderIdx = 1; 
         this.selectedCardIdx = null; 
         this.gameMode = 'normal';
+        this.difficulty = 'medium';
         this.playerPassedToss = false;
+        this.isTaking = false;
     }
 
-    startNewGame(botCount, mode) {
+    startNewGame(botCount, mode, diff) {
         this.gameMode = mode;
+        this.difficulty = diff;
         this.playerPassedToss = false;
+        this.isTaking = false;
         this.players = [{ id:0, visualId:'me', type:'human', name:"Вы", hand:[], isOut: false }];
         
         const botNames = ["Женя", "Лиза", "Коля"];
@@ -235,7 +229,8 @@ class DurakGame {
         ][botCount-1];
 
         setup.forEach((s, i) => {
-            this.players.push({ id:s.id, visualId:s.vid, type:'bot', name:botNames[i], hand:[], isOut: false });
+            const skill = 0.60 + Math.random() * 0.25; 
+            this.players.push({ id:s.id, visualId:s.vid, type:'bot', name:botNames[i], hand:[], isOut: false, skill: skill });
         });
 
         this.createDeck();
@@ -249,15 +244,18 @@ class DurakGame {
 
     loadFromState(state) {
         this.gameMode = state.gameMode;
+        this.difficulty = state.difficulty || 'medium';
         this.attackerIdx = state.attackerIdx;
         this.defenderIdx = state.defenderIdx;
         this.playerPassedToss = state.playerPassedToss;
+        this.isTaking = state.isTaking || false;
         
         this.trump = new Card(state.trump.suit, state.trump.rank);
         this.deck = state.deck.map(c => new Card(c.suit, c.rank));
         
         this.players = state.players.map(p => {
             p.hand = p.hand.map(c => new Card(c.suit, c.rank));
+            if (p.type === 'bot' && !p.skill) p.skill = 0.7;
             return p;
         });
 
@@ -275,13 +273,15 @@ class DurakGame {
         if(!app.isGameActive) return; 
         const state = {
             gameMode: this.gameMode,
+            difficulty: this.difficulty,
             players: this.players,
             deck: this.deck,
             trump: this.trump,
             table: this.table,
             attackerIdx: this.attackerIdx,
             defenderIdx: this.defenderIdx,
-            playerPassedToss: this.playerPassedToss
+            playerPassedToss: this.playerPassedToss,
+            isTaking: this.isTaking
         };
         app.saveGame(JSON.stringify(state));
     }
@@ -290,36 +290,22 @@ class DurakGame {
         ['p1','p2','p3'].forEach(vid => {
             const el = document.getElementById(vid);
             const player = this.players.find(p => p.visualId === vid);
-            
-            if (!player) {
-                el.classList.add('inactive');
-                el.style.opacity = '0';
-                return;
-            }
-            
-            el.classList.remove('inactive');
-            el.style.opacity = '1';
-
+            if (!player) { el.classList.add('inactive'); el.style.opacity = '0'; return; }
+            el.classList.remove('inactive'); el.style.opacity = '1';
             if (player.isOut) {
-                el.style.opacity = '0.4';
-                el.querySelector('.name-tag').innerText = "✅ " + player.name;
-                const z = el.querySelector('.hand');
-                if(z) z.innerHTML = '';
-            } else {
-                el.querySelector('.name-tag').innerText = player.name;
-            }
+                el.style.opacity = '0.4'; el.querySelector('.name-tag').innerText = "✅ " + player.name;
+                const z = el.querySelector('.hand'); if(z) z.innerHTML = '';
+            } else { el.querySelector('.name-tag').innerText = player.name; }
         });
     }
 
     createDeck() {
         this.deck = [];
         for(let s of SUITS) for(let r of RANKS) this.deck.push(new Card(s, r));
-        
         for (let i = this.deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
         }
-        
         this.trump = this.deck[0];
     }
 
@@ -341,244 +327,138 @@ class DurakGame {
     dealCards(cnt) {
         let p = this.attackerIdx;
         if (this.players[p].isOut) p = this.getNextActiveIndex(p);
-
         let anyDealt = false;
         let activeCount = this.players.filter(pl => !pl.isOut).length;
         let attempts = 0;
-
         while (attempts < activeCount && this.deck.length > 0) {
             if (!this.players[p].isOut) {
                 while(this.players[p].hand.length < cnt && this.deck.length > 0) {
-                    this.players[p].hand.push(this.deck.pop());
-                    anyDealt = true;
+                    this.players[p].hand.push(this.deck.pop()); anyDealt = true;
                 }
                 this.sortHand(this.players[p].hand);
             }
             p = (p + 1) % this.players.length;
             if (!this.players[p].isOut) attempts++;
         }
-        
         if(anyDealt) soundManager.playCard();
     }
 
     sortHand(h) {
         h.sort((a,b) => {
-            if(a.suit===this.trump.suit && b.suit!==this.trump.suit) return 1;
-            if(a.suit!==this.trump.suit && b.suit===this.trump.suit) return -1;
-            if(a.suit===b.suit) return a.value - b.value;
-            return a.suit.localeCompare(b.suit);
+            const valA = a.value + (a.suit === this.trump.suit ? 20 : 0);
+            const valB = b.value + (b.suit === this.trump.suit ? 20 : 0);
+            return valA - valB;
         });
     }
 
-    processTurn() {
-        if(!app.isGameActive) return;
-        this.selectedCardIdx = null; 
-        this.highlightActivePlayer();
-        this.updateUI();
-
-        const att = this.players[this.attackerIdx];
-        const def = this.players[this.defenderIdx];
-
-        if(this.table.length===0) {
-            this.showMessage(att.id===0 ? "ВАШ ХОД" : `ХОДИТ ${att.name.toUpperCase()}`);
-        }
-
-        this.saveGameState(); 
-
-        if(att.type==='bot' && this.table.every(p=>p.defend)) {
-            setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
-        }
-        else if(def.type==='bot' && this.table.some(p=>!p.defend)) {
-            setTimeout(()=>{if(app.isGameActive)this.botDefend()}, BOT_DELAY);
-        }
+    getCardWeight(card) {
+        let weight = card.value;
+        if (card.suit === this.trump.suit) weight += 20; 
+        return weight;
     }
 
-    selectCard(idx) {
-        if(this.players[0].type !== 'human') return;
-        if(this.players[0].isOut) return; 
+    // --- AI LOGIC ---
+    evaluateToss(bot, card, isTaking) {
+        if (this.difficulty === 'easy') return true;
+        const isSmartMove = Math.random() < bot.skill; 
+        if (!isSmartMove && this.difficulty !== 'hard') return true; 
 
-        soundManager.playClick();
-        this.selectedCardIdx = (this.selectedCardIdx === idx) ? null : idx;
-        this.updateUI();
-    }
+        const isTrump = card.suit === this.trump.suit;
+        const isHighValue = card.value >= 12;
 
-    playerButtonAction() {
-        if(this.selectedCardIdx === null) return;
-        soundManager.playClick();
-        
-        const cardIdx = this.selectedCardIdx;
-        const card = this.players[0].hand[cardIdx];
-
-        if(this.attackerIdx === 0) {
-            if(this.canAttack(card)) {
-                this.playCard(0, cardIdx, 'attack');
-            } else {
-                this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
-                this.selectedCardIdx = null; this.updateUI();
-            }
+        if (isTaking) {
+            if (isTrump && bot.hand.length > 1) return false;
+            if (isHighValue && !isTrump && bot.hand.length < 6) return false;
+            return true; 
         } 
-        else if(this.defenderIdx === 0) {
-            if(this.gameMode === 'transfer' && this.table.length > 0 && this.table.every(p => !p.defend) && card.rank === this.table[0].attack.rank) {
-                this.playCard(0, cardIdx, 'transfer');
-            } else {
-                // ИСПОЛЬЗУЕМ УМНЫЙ ПОИСК ЦЕЛИ
-                const targetPair = this.findBestTarget(card);
-                if(targetPair) {
-                    this.playCard(0, cardIdx, 'defend', targetPair);
-                } else {
-                    this.showMessage("ЭТОЙ НЕ ПОБИТЬ");
-                    this.selectedCardIdx = null; 
-                    this.updateUI();
+        if (isTrump && this.deck.length > 0) return false;
+        return true;
+    }
+
+    getBestAttackCard(hand) {
+        if (hand.length === 0) return -1;
+        if (this.difficulty === 'easy') return Math.floor(Math.random() * hand.length);
+
+        if (this.difficulty === 'medium') {
+            let bestIdx = 0; let minWeight = 100;
+            hand.forEach((c, i) => {
+                let w = this.getCardWeight(c);
+                if (w < minWeight) { minWeight = w; bestIdx = i; }
+            });
+            return bestIdx;
+        }
+
+        if (this.difficulty === 'hard') {
+            const ranks = {};
+            hand.forEach((c, i) => {
+                if (!ranks[c.rank]) ranks[c.rank] = [];
+                ranks[c.rank].push({ index: i, weight: this.getCardWeight(c) });
+            });
+            for (let r in ranks) {
+                if (ranks[r].length >= 2) {
+                    if (ranks[r].every(x => x.weight < 20) || this.deck.length === 0) return ranks[r][0].index;
                 }
             }
+            let bestIdx = 0; let minWeight = 100;
+            hand.forEach((c, i) => {
+                let w = this.getCardWeight(c);
+                if (w < minWeight) { minWeight = w; bestIdx = i; }
+            });
+            return bestIdx;
         }
-        else {
-            if (this.canAttack(card)) {
-                this.playCard(0, cardIdx, 'attack');
-            } else {
-                this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
-            }
-        }
+        return 0;
     }
 
-    // --- УМНЫЙ ПОИСК (Приоритет: масть > козырь против козыря > козырь против простой) ---
-    findBestTarget(card) {
-        // 1. Ищем все пары, которые эта карта может побить
-        const candidates = this.table.filter(p => !p.defend && this.canBeat(p.attack, card));
+    getBestDefenseCard(hand, attackCard) {
+        const candidates = hand.map((c, i) => ({ card: c, index: i })).filter(item => this.canBeat(attackCard, item.card));
+        if (candidates.length === 0) return -1; 
+        if (this.difficulty === 'easy') return candidates[0].index;
 
-        if (candidates.length === 0) return null;
-        if (candidates.length === 1) return candidates[0];
-
-        // 2. Сортируем кандидатов по приоритету
-        candidates.sort((a, b) => {
-            // Приоритет 1: Совпадение масти (идеал)
-            const aSuitMatch = (a.attack.suit === card.suit);
-            const bSuitMatch = (b.attack.suit === card.suit);
-            if (aSuitMatch && !bSuitMatch) return -1;
-            if (!aSuitMatch && bSuitMatch) return 1;
-
-            // Приоритет 2: Козырь бьет козырь (если совпадения нет)
-            // Если выбранная карта козырь, предпочитаем бить козырную атаку, а не простую
-            if (card.suit === this.trump.suit) {
-                const aIsTrump = (a.attack.suit === this.trump.suit);
-                const bIsTrump = (b.attack.suit === this.trump.suit);
-                if (aIsTrump && !bIsTrump) return -1; 
-                if (!aIsTrump && bIsTrump) return 1;
+        candidates.forEach(cand => {
+            let weight = this.getCardWeight(cand.card);
+            // PRO-LOGIC: "Закрытие рядов"
+            // Если карта закрывает существующий ранг на столе (чтобы не накидали новых), даем бонус
+            if (this.difficulty === 'hard') {
+                const rankExists = this.table.some(p => p.attack.rank === cand.card.rank || (p.defend && p.defend.rank === cand.card.rank));
+                if (rankExists) weight -= 15; // Сильный приоритет
             }
-
-            // Приоритет 3 (второстепенный): Старшинство атаки (бьем самую крупную из доступных)
-            return b.attack.value - a.attack.value;
+            cand.weight = weight;
         });
 
-        return candidates[0];
-    }
-
-    playCard(playerId, cardIdx, type, targetPair = null) {
-        const p = this.players[playerId];
-        const card = p.hand.splice(cardIdx, 1)[0];
-        
-        this.selectedCardIdx = null; 
-        soundManager.playCard();
-
-        // 1. ПЕРЕВОД
-        if (type === 'transfer') {
-            this.table.push({ attack: card, defend: null });
-            this.showMessage("ПЕРЕВОД!");
-            this.attackerIdx = this.defenderIdx;
-            this.defenderIdx = this.getNextActiveIndex(this.defenderIdx);
-        } 
-        // 2. АТАКА
-        else if (type === 'attack') {
-            this.table.push({ attack: card, defend: null });
-        } 
-        // 3. ЗАЩИТА
-        else { 
-            const pair = targetPair || this.table.find(p => !p.defend);
-            if(pair) pair.defend = card;
-        }
-
-        if (playerId === 0 && type === 'attack') this.playerPassedToss = false; 
-
-        this.updateUI();
-
-        // А. МГНОВЕННАЯ ПОБЕДА
-        if (this.deck.length === 0 && p.hand.length === 0) {
-            this.checkWin(); 
-            return;
-        }
-
-        // Б. ПРАВИЛО "НЕТ КАРТ - НЕТ ВЗЯТКИ"
-        if (type === 'defend' && p.hand.length === 0) {
-            setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
-            return;
-        }
-        
-        // В. ПЕРЕХОД ХОДА БОТАМ
-        if (type === 'transfer') {
-             const newDef = this.players[this.defenderIdx];
-             if (newDef.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
-             return; 
-        }
-
-        if (type === 'defend') {
-             if (this.table.every(p=>p.defend)) {
-                 const att = this.players[this.attackerIdx];
-                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
-             } else {
-                 if (this.players[this.defenderIdx].type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
-             }
-        }
-        
-        if (type === 'attack') {
-             const def = this.players[this.defenderIdx];
-             if (def.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
-        }
-    }
-
-    playerPass() {
-        soundManager.playClick();
-        if (this.attackerIdx === 0) {
-            if(this.table.length > 0 && this.isTableCovered()) this.endBout(false);
-        } else if (this.defenderIdx === 0) {
-            this.takeCards(0);
-        } else {
-            this.playerPassedToss = true;
-            this.updateUI();
-            const att = this.players[this.attackerIdx];
-            if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 500);
-        }
+        // Сортируем по весу (самая дешевая или тактически выгодная первая)
+        candidates.sort((a, b) => a.weight - b.weight);
+        return candidates[0].index;
     }
 
     // --- БОТЫ ---
     botAttack() {
         if (!app.isGameActive || this.attackerIdx === 0) return;
-        if (!this.table.every(p => p.defend) && this.table.length > 0) return;
+        if (!this.isTaking && !this.table.every(p => p.defend) && this.table.length > 0) return;
 
         const bot = this.players[this.attackerIdx];
         const defender = this.players[this.defenderIdx];
 
-        // ВАЖНОЕ ПРАВИЛО: Не подкидывать игроку, у которого нет карт (и колода еще есть)
-        // Хотя в playCard мы делаем endBout, но на всякий случай
-        if (defender.hand.length === 0) {
-            this.endBout(false);
-            return;
-        }
+        if (defender.hand.length === 0) { this.endBout(false); return; }
 
         if (this.table.length === 0) {
-            const idx = this.findMinCard(bot.hand);
+            const idx = this.getBestAttackCard(bot.hand);
             if (idx !== -1) this.botPlayCard(idx, 'attack');
             return;
         }
 
-        let tossIdx = -1; let minVal = 100;
+        let tossIdx = -1; let minWeight = 100;
         bot.hand.forEach((c, i) => {
             if (this.canAttack(c)) {
-                let v = c.value + (c.suit === this.trump.suit ? 20 : 0);
-                if (v < minVal) { minVal = v; tossIdx = i; }
+                if (this.evaluateToss(bot, c, this.isTaking)) {
+                    let w = this.getCardWeight(c);
+                    if (w < minWeight) { minWeight = w; tossIdx = i; }
+                }
             }
         });
 
-        if (tossIdx !== -1 && this.table.length < 6 && defender.hand.length > (this.table.length - this.table.filter(p=>p.defend).length)) {
+        let cardsOnTable = this.table.length - (this.isTaking ? 0 : this.table.filter(p=>p.defend).length);
+        
+        if (tossIdx !== -1 && this.table.length < 6 && defender.hand.length > cardsOnTable) {
             this.botPlayCard(tossIdx, 'attack');
         } else {
             const player = this.players[0];
@@ -589,35 +469,40 @@ class DurakGame {
                 return;
             }
 
-            this.showMessage("БИТО!");
-            setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 1500);
+            if (this.isTaking) {
+                this.takeCards(this.defenderIdx);
+            } else {
+                this.showMessage("БИТО!");
+                setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 1500);
+            }
         }
     }
 
     botDefend() {
         if (!app.isGameActive) return;
         const bot = this.players[this.defenderIdx];
+        if (this.isTaking && this.players[this.defenderIdx].type === 'bot') return;
+
         const attack = this.getLastUnbeaten();
         if (!attack || this.players[this.defenderIdx].type !== 'bot') return;
 
         if (this.gameMode === 'transfer' && this.table.every(p => !p.defend)) {
             const tIdx = bot.hand.findIndex(c => c.rank === attack.rank);
-            if (tIdx !== -1) { this.botPlayCard(tIdx, 'transfer'); return; }
+            if (tIdx !== -1) { 
+                if (this.difficulty !== 'easy' || Math.random() > 0.3) { this.botPlayCard(tIdx, 'transfer'); return; }
+            }
         }
 
-        let bestIdx = -1; let minVal = 100;
-        bot.hand.forEach((c, i) => {
-            if (this.canBeat(attack, c)) {
-                let v = c.value + (c.suit === this.trump.suit ? 20 : 0);
-                if (v < minVal) { minVal = v; bestIdx = i; }
-            }
-        });
+        const bestIdx = this.getBestDefenseCard(bot.hand, attack);
 
         if (bestIdx !== -1) {
             this.botPlayCard(bestIdx, 'defend');
         } else {
-            this.showMessage(`${bot.name.toUpperCase()} БЕРЁТ`);
-            setTimeout(() => { if(app.isGameActive) this.takeCards(this.defenderIdx); }, 1500);
+            this.isTaking = true;
+            this.showMessage(`${bot.name.toUpperCase()} БЕРЁТ...`);
+            this.updateUI();
+            const att = this.players[this.attackerIdx];
+            if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 1000);
         }
     }
 
@@ -643,14 +528,9 @@ class DurakGame {
         this.updateUI();
 
         if (type === 'defend' && bot.hand.length === 0 && this.deck.length > 0) {
-             setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500);
-             return;
+             setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500); return;
         }
-        
-        if (this.deck.length === 0 && bot.hand.length === 0) {
-            this.checkWin();
-            return;
-        }
+        if (this.deck.length === 0 && bot.hand.length === 0) { this.checkWin(); return; }
 
         if (type === 'transfer') {
              const newDef = this.players[this.defenderIdx];
@@ -666,8 +546,175 @@ class DurakGame {
                  setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
              }
         } else if (type === 'attack') {
+             if (this.isTaking) {
+                 const att = this.players[this.attackerIdx];
+                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
+                 return;
+             }
              const nextDef = this.players[this.defenderIdx];
              if (nextDef.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
+        }
+    }
+
+    processTurn() {
+        if(!app.isGameActive) return;
+        this.selectedCardIdx = null; 
+        this.highlightActivePlayer();
+        this.updateUI();
+
+        const att = this.players[this.attackerIdx];
+        const def = this.players[this.defenderIdx];
+
+        if(this.table.length===0) {
+            this.showMessage(att.id===0 ? "ВАШ ХОД" : `ХОДИТ ${att.name.toUpperCase()}`);
+        }
+
+        this.saveGameState(); 
+
+        if (this.isTaking) {
+            if (att.type === 'bot') setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
+            return;
+        }
+
+        if(att.type==='bot' && this.table.every(p=>p.defend)) {
+            setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
+        }
+        else if(def.type==='bot' && this.table.some(p=>!p.defend)) {
+            setTimeout(()=>{if(app.isGameActive)this.botDefend()}, BOT_DELAY);
+        }
+    }
+
+    // --- ИГРОК ---
+    selectCard(idx) {
+        if(this.players[0].type !== 'human') return;
+        if(this.players[0].isOut) return; 
+        soundManager.playClick();
+        this.selectedCardIdx = (this.selectedCardIdx === idx) ? null : idx;
+        this.updateUI();
+    }
+
+    playerButtonAction() {
+        if(this.selectedCardIdx === null) return;
+        soundManager.playClick();
+        const cardIdx = this.selectedCardIdx;
+        const card = this.players[0].hand[cardIdx];
+
+        if(this.attackerIdx === 0 || this.isTaking) {
+            if(this.canAttack(card)) {
+                this.playCard(0, cardIdx, 'attack');
+            } else {
+                this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
+                this.selectedCardIdx = null; this.updateUI();
+            }
+        } 
+        else if(this.defenderIdx === 0) {
+            if(this.gameMode === 'transfer' && this.table.length > 0 && this.table.every(p => !p.defend) && card.rank === this.table[0].attack.rank) {
+                this.playCard(0, cardIdx, 'transfer');
+            } else {
+                const targetPair = this.findBestTarget(card);
+                if(targetPair) this.playCard(0, cardIdx, 'defend', targetPair);
+                else { this.showMessage("ЭТОЙ НЕ ПОБИТЬ"); this.selectedCardIdx = null; this.updateUI(); }
+            }
+        }
+        else {
+            if (this.canAttack(card)) this.playCard(0, cardIdx, 'attack');
+            else this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
+        }
+    }
+
+    findBestTarget(card) {
+        const candidates = this.table.filter(p => !p.defend && this.canBeat(p.attack, card));
+        if (candidates.length === 0) return null;
+        if (candidates.length === 1) return candidates[0];
+        candidates.sort((a, b) => {
+            const aSuitMatch = (a.attack.suit === card.suit);
+            const bSuitMatch = (b.attack.suit === card.suit);
+            if (aSuitMatch && !bSuitMatch) return -1;
+            if (!aSuitMatch && bSuitMatch) return 1;
+            if (card.suit === this.trump.suit) {
+                const aIsTrump = (a.attack.suit === this.trump.suit);
+                const bIsTrump = (b.attack.suit === this.trump.suit);
+                if (aIsTrump && !bIsTrump) return -1; 
+                if (!aIsTrump && bIsTrump) return 1;
+            }
+            return b.attack.value - a.attack.value;
+        });
+        return candidates[0];
+    }
+
+    playCard(playerId, cardIdx, type, targetPair = null) {
+        const p = this.players[playerId];
+        const card = p.hand.splice(cardIdx, 1)[0];
+        
+        this.selectedCardIdx = null; 
+        soundManager.playCard();
+
+        if (type === 'transfer') {
+            this.table.push({ attack: card, defend: null });
+            this.showMessage("ПЕРЕВОД!");
+            this.attackerIdx = this.defenderIdx;
+            this.defenderIdx = this.getNextActiveIndex(this.defenderIdx);
+        } else if (type === 'attack') {
+            this.table.push({ attack: card, defend: null });
+        } else { 
+            const pair = targetPair || this.table.find(p => !p.defend);
+            if(pair) pair.defend = card;
+        }
+
+        if (playerId === 0 && type === 'attack') this.playerPassedToss = false; 
+
+        this.updateUI();
+
+        if (this.deck.length === 0 && p.hand.length === 0) { this.checkWin(); return; }
+        if (type === 'defend' && p.hand.length === 0) { setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500); return; }
+        
+        if (type === 'transfer') {
+             const newDef = this.players[this.defenderIdx];
+             if (newDef.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
+             return; 
+        }
+
+        if (type === 'defend') {
+             if (this.table.every(p=>p.defend)) {
+                 const att = this.players[this.attackerIdx];
+                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
+             } else {
+                 if (this.players[this.defenderIdx].type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
+             }
+        }
+        
+        if (type === 'attack') {
+             if (this.isTaking) {
+                 const att = this.players[this.attackerIdx];
+                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, BOT_DELAY);
+                 return;
+             }
+             const nextDef = this.players[this.defenderIdx];
+             if (nextDef.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botDefend(); }, BOT_DELAY);
+        }
+    }
+
+    playerPass() {
+        soundManager.playClick();
+        if (this.attackerIdx === 0) {
+            if (this.isTaking) {
+                this.takeCards(this.defenderIdx);
+            } else {
+                if(this.table.length > 0 && this.isTableCovered()) this.endBout(false);
+            }
+        } else if (this.defenderIdx === 0) {
+            this.isTaking = true;
+            this.updateUI();
+            this.showMessage("ВЫ БЕРЁТЕ...");
+            const att = this.players[this.attackerIdx];
+            if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 1000);
+        } else {
+            this.playerPassedToss = true;
+            this.updateUI();
+            if (this.isTaking) {
+                 const att = this.players[this.attackerIdx];
+                 if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 500);
+            }
         }
     }
 
@@ -701,25 +748,19 @@ class DurakGame {
     endBout(took) {
         this.table = [];
         this.playerPassedToss = false; 
+        this.isTaking = false;
         this.updateStatus(); 
         this.dealCards(6);
-        
         if (this.checkWin()) return; 
-
         if (took) this.attackerIdx = this.getNextActiveIndex(this.defenderIdx); 
         else this.attackerIdx = this.defenderIdx; 
-        
         this.defenderIdx = this.getNextActiveIndex(this.attackerIdx);
         this.processTurn();
     }
 
     updateStatus() {
         if (this.deck.length === 0) {
-            this.players.forEach(p => {
-                if (p.hand.length === 0 && !p.isOut) {
-                    p.isOut = true;
-                }
-            });
+            this.players.forEach(p => { if (p.hand.length === 0 && !p.isOut) p.isOut = true; });
             this.updateVisualVisibility();
         }
     }
@@ -727,13 +768,11 @@ class DurakGame {
     checkWin() {
         this.updateStatus();
         const human = this.players[0];
-        
         if (human.isOut) {
             app.isGameActive = false; soundManager.playWin();
             setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(); }, 500);
             return true;
         }
-
         const activeCount = this.players.filter(p => !p.isOut).length;
         if (activeCount <= 1) {
             if (!human.isOut) {
@@ -755,9 +794,9 @@ class DurakGame {
         ['.name-tag.me', '#p1 .name-tag', '#p2 .name-tag', '#p3 .name-tag'].forEach(s => {
             const el = document.querySelector(s); if(el) el.classList.remove('active-turn');
         });
-        
         let active;
-        if(this.table.length > 0 && this.table.some(p => !p.defend)) active = this.defenderIdx;
+        if (this.isTaking) active = this.defenderIdx;
+        else if (this.table.length > 0 && this.table.some(p => !p.defend)) active = this.defenderIdx;
         else active = this.attackerIdx;
         
         const p = this.players[active];
@@ -772,65 +811,56 @@ class DurakGame {
             tIcon.innerText = this.trump.suit;
             tIcon.style.color = (this.trump.suit === '♥' || this.trump.suit === '♦') ? '#d32f2f' : 'black';
         }
-        
         this.highlightActivePlayer();
-
         const mainBtn = document.getElementById('action-btn');
         const secBtn = document.getElementById('pass-btn');
         mainBtn.className = "main-btn"; mainBtn.disabled = true; secBtn.classList.remove('visible');
 
         if (this.attackerIdx === 0) {
-            if (this.table.length > 0 && this.isTableCovered()) { secBtn.innerText = "БИТО"; secBtn.classList.add('visible'); }
-            
+            if (this.table.length > 0) {
+                if (this.isTaking) { secBtn.innerText = "ПУСТЬ БЕРЕТ"; secBtn.classList.add('visible'); }
+                else if (this.isTableCovered()) { secBtn.innerText = "БИТО"; secBtn.classList.add('visible'); }
+            }
             if (this.selectedCardIdx !== null) {
-                mainBtn.innerText = "ПОЙТИ ЭТОЙ КАРТОЙ";
-                mainBtn.classList.add('ready');
-                mainBtn.disabled = false;
+                mainBtn.innerText = "ПОЙТИ ЭТОЙ КАРТОЙ"; mainBtn.classList.add('ready'); mainBtn.disabled = false;
             } else {
                 if (this.table.length === 0) { mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ"; mainBtn.classList.add('active-info'); }
                 else {
-                    if (!this.isTableCovered()) { mainBtn.innerText = "ЖДИТЕ ОТВЕТА..."; mainBtn.disabled = true; }
+                    if (this.isTaking) { mainBtn.innerText = "ПОДКИДЫВАЙТЕ ЕЩЁ"; }
+                    else if (!this.isTableCovered()) { mainBtn.innerText = "ЖДИТЕ ОТВЕТА..."; mainBtn.disabled = true; }
                     else {
                         const hasCard = this.players[0].hand.some(c => this.canAttack(c));
                         if(hasCard) mainBtn.innerText = "ПОДКИДЫВАЙТЕ КАРТУ";
-                        else { 
-                            mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ ИЛИ БИТО ->"; 
-                            mainBtn.disabled = true; 
-                        }
+                        else { mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ ИЛИ БИТО ->"; mainBtn.disabled = true; }
                     }
                 }
             }
         } 
         else if (this.defenderIdx === 0) {
-            if (this.selectedCardIdx !== null) {
-                const card = this.players[0].hand[this.selectedCardIdx];
-                const canTransfer = (this.gameMode === 'transfer' && this.table.length > 0 && this.table.every(p => !p.defend) && card.rank === this.table[0].attack.rank);
-                
-                mainBtn.innerText = canTransfer ? "ПЕРЕВЕСТИ" : "ОТБИТЬСЯ ЭТОЙ";
-                mainBtn.classList.add('ready'); mainBtn.disabled = false;
-            } else {
-                const attack = this.getLastUnbeaten();
-                if (attack) {
-                    mainBtn.innerText = "ВЗЯТЬ (НА ВАС ИДУТ)"; mainBtn.classList.add('active-info'); mainBtn.disabled = false;
-                    mainBtn.onclick = () => { if(this.selectedCardIdx !== null) this.playerButtonAction(); else this.takeCards(0); };
-                } else mainBtn.innerText = "ЖДИТЕ ХОДА...";
+            if (this.isTaking) { mainBtn.innerText = "ВЫ БЕРЕТЕ..."; mainBtn.disabled = true; } 
+            else {
+                if (this.selectedCardIdx !== null) {
+                    const card = this.players[0].hand[this.selectedCardIdx];
+                    const canTransfer = (this.gameMode === 'transfer' && this.table.length > 0 && this.table.every(p => !p.defend) && card.rank === this.table[0].attack.rank);
+                    mainBtn.innerText = canTransfer ? "ПЕРЕВЕСТИ" : "ОТБИТЬСЯ ЭТОЙ";
+                    mainBtn.classList.add('ready'); mainBtn.disabled = false;
+                } else {
+                    const attack = this.getLastUnbeaten();
+                    if (attack) {
+                        mainBtn.innerText = "ВЗЯТЬ (НА ВАС ИДУТ)"; mainBtn.classList.add('active-info'); mainBtn.disabled = false;
+                        mainBtn.onclick = () => { if(this.selectedCardIdx !== null) this.playerButtonAction(); else this.playerPass(); };
+                    } else mainBtn.innerText = "ЖДИТЕ ХОДА...";
+                }
             }
         } 
         else {
             const hasCard = !this.players[0].isOut && this.players[0].hand.some(c => this.canAttack(c));
             if (this.selectedCardIdx !== null) {
-                mainBtn.innerText = "ПОДКИНУТЬ ЭТУ";
-                mainBtn.classList.add('ready');
-                mainBtn.disabled = false;
+                mainBtn.innerText = "ПОДКИНУТЬ ЭТУ"; mainBtn.classList.add('ready'); mainBtn.disabled = false;
             } else {
-                if (hasCard && !this.playerPassedToss && this.isTableCovered() && this.table.length > 0) {
-                    mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ";
-                    mainBtn.disabled = true; 
-                    secBtn.innerText = "НЕ БУДУ";
-                    secBtn.classList.add('visible');
-                } else {
-                    mainBtn.innerText = "ХОДЯТ БОТЫ...";
-                }
+                if (hasCard && !this.playerPassedToss && (this.isTableCovered() || this.isTaking) && this.table.length > 0) {
+                    mainBtn.innerText = "ВЫБЕРИТЕ КАРТУ"; mainBtn.disabled = true; secBtn.innerText = "НЕ БУДУ"; secBtn.classList.add('visible');
+                } else { mainBtn.innerText = "ХОДЯТ БОТЫ..."; }
             }
         }
 

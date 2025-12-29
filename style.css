@@ -389,8 +389,8 @@ body {
   z-index: 1;
 }
 .pair .defend {
-  top: 20px;
-  left: 20px;
+  top: 30px;
+  left: 7px;
   z-index: 2;
   transform: rotate(10deg);
 }
