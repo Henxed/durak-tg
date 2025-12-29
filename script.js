@@ -35,22 +35,22 @@ const soundManager = {
 
 // --- STORAGE ---
 const storage = {
-    get: function(key, callback) {
+    get: async function(key, callback) {
         if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            tg.CloudStorage.getItem(key, (err, val) => {
+            await tg.CloudStorage.getItem(key, (err, val) => {
                 if (!err && val) callback(val); else callback(localStorage.getItem(key));
             });
         } else { callback(localStorage.getItem(key)); }
     },
-    set: function(key, val) {
+    set: async function(key, val) {
         if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            tg.CloudStorage.setItem(key, val, (err, saved) => {});
+            await tg.CloudStorage.setItem(key, val, (err, saved) => {});
         }
         localStorage.setItem(key, val);
     },
-    remove: function(key) {
+    remove: async function(key) {
         if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            tg.CloudStorage.removeItem(key);
+            await tg.CloudStorage.removeItem(key);
         }
         localStorage.removeItem(key);
     }
