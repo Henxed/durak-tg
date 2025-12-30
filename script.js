@@ -667,6 +667,7 @@ class DurakGame {
         } else {
             this.isTaking = true;
             this.showMessage(`${bot.name.toUpperCase()} БЕРЁТ...`);
+            this.isProcessing = false;
             this.updateUI();
             const att = this.players[this.attackerIdx];
             if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 1000);
@@ -774,12 +775,13 @@ class DurakGame {
         const cardIdx = this.selectedCardIdx;
         const card = this.players[0].hand[cardIdx];
 
-        if(this.attackerIdx === 0 || this.isTaking) {
-            if(this.canAttack(card)) {
+        if (this.attackerIdx === 0 || this.isTaking || this.defenderIdx !== 0) {
+            if (this.canAttack(card)) {
                 this.playCard(0, cardIdx, 'attack');
             } else {
-                this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ");
-                this.selectedCardIdx = null; this.updateUI();
+                this.showMessage("НЕЛЬЗЯ ПОДКИНУТЬ (ЛИМИТ ИЛИ РАНГ)");
+                this.selectedCardIdx = null; 
+                this.updateUI();
             }
         } 
         else if(this.defenderIdx === 0) {
@@ -964,12 +966,16 @@ class DurakGame {
 
         // 3. Стандартная проверка на наличие ранга на столе
         if (this.table.length === 0) return true;
-        const ranks = new Set();
-        this.table.forEach(p => { 
-            ranks.add(p.attack.rank); 
-            if(p.defend) ranks.add(p.defend.rank); 
+
+        const cardRank = String(c.rank);
+        const tableRanks = new Set();
+        
+        this.table.forEach(pair => {
+            if (pair.attack) tableRanks.add(String(pair.attack.rank));
+            if (pair.defend) tableRanks.add(String(pair.defend.rank));
         });
-        return ranks.has(c.rank);
+
+        return tableRanks.has(cardRank);
     }
     canBeat(att, def) {
         if (def.suit === this.trump.suit && att.suit !== this.trump.suit) return true;
