@@ -36,22 +36,23 @@ const soundManager = {
 // --- STORAGE ---
 const storage = {
     get: async function(key, callback) {
-        if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            await tg.CloudStorage.getItem(key, (err, val) => {
-                if (!err && val) callback(val); else callback(localStorage.getItem(key));
-            });
-        } else { callback(localStorage.getItem(key)); }
+        // if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
+        //     await tg.CloudStorage.getItem(key, (err, val) => {
+        //         if (!err && val) callback(val); else callback(localStorage.getItem(key));
+        //     });
+        // } else {  }
+        callback(localStorage.getItem(key));
     },
     set: async function(key, val) {
-        if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            await tg.CloudStorage.setItem(key, val, (err, saved) => {});
-        }
+        // if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
+        //     await tg.CloudStorage.setItem(key, val, (err, saved) => {});
+        // }
         localStorage.setItem(key, val);
     },
     remove: async function(key) {
-        if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
-            await tg.CloudStorage.removeItem(key);
-        }
+        // if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.9')) {
+        //     await tg.CloudStorage.removeItem(key);
+        // }
         localStorage.removeItem(key);
     }
 };
@@ -550,6 +551,19 @@ class DurakGame {
 
         const bot = this.players[this.attackerIdx];
         const defender = this.players[this.defenderIdx];
+        const unbeatenCount = this.table.filter(p => !p.defend).length;
+        
+        // Если бот-защитник забирает или мы просто подкидываем
+        // Нельзя кидать больше карт, чем осталось в руке у защитника
+        if (unbeatenCount >= defender.hand.length) {
+            if (this.isTaking) {
+                this.takeCards(this.defenderIdx);
+            } else if (this.isTableCovered()) {
+                this.showMessage("БИТО!");
+                setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 1500);
+            }
+            return; 
+        }
 
         if (defender.hand.length === 0) { this.endBout(false); return; }
 
@@ -577,10 +591,10 @@ class DurakGame {
             const player = this.players[0];
             const playerCanToss = !player.isOut && player.hand.some(c => this.canAttack(c));
             
-            // ИСПРАВЛЕНИЕ: Добавляем проверку на playerPassedToss
             if (playerCanToss && !this.playerPassedToss && this.defenderIdx !== 0 && defender.hand.length > 0) {
-                // Ждем хода игрока
-                this.showMessage("ИГРОК МОЖЕТ ПОДКИНУТЬ");
+                this.isProcessing = false; // Освобождаем ход для игрока
+                this.showMessage("ВАШ ХОД! ПОДКИНЕТЕ?");
+                this.updateUI();
                 return;
             }
 
@@ -712,34 +726,41 @@ class DurakGame {
     processTurn() {
         if(!app.isGameActive) return;
         this.selectedCardIdx = null; 
-        this.highlightActivePlayer();
         this.updateUI();
 
         const att = this.players[this.attackerIdx];
         const def = this.players[this.defenderIdx];
 
-        if(this.table.length===0) {
-            this.showMessage(att.id===0 ? "ВАШ ХОД" : `ХОДИТ ${att.name.toUpperCase()}`);
-        }
-
-        this.saveGameState(); 
-
         if (this.isTaking) {
-            if (att.type === 'bot') setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
+            if (att.type === 'bot') {
+                this.isProcessing = true; // Захватываем управление
+                setTimeout(() => { 
+                    this.isProcessing = false; 
+                    if(app.isGameActive) this.botAttack(); 
+                }, BOT_DELAY);
+            }
             return;
         }
 
-        if(att.type==='bot' && this.table.every(p=>p.defend)) {
-            setTimeout(()=>{if(app.isGameActive)this.botAttack()}, BOT_DELAY);
+        if(att.type === 'bot' && this.table.every(p => p.defend)) {
+            this.isProcessing = true;
+            setTimeout(() => { 
+                this.isProcessing = false; 
+                if(app.isGameActive) this.botAttack(); 
+            }, BOT_DELAY);
         }
-        else if(def.type==='bot' && this.table.some(p=>!p.defend)) {
-            setTimeout(()=>{if(app.isGameActive)this.botDefend()}, BOT_DELAY);
+        else if(def.type === 'bot' && this.table.some(p => !p.defend)) {
+            this.isProcessing = true;
+            setTimeout(() => { 
+                this.isProcessing = false; 
+                if(app.isGameActive) this.botDefend(); 
+            }, BOT_DELAY);
         }
     }
 
     // --- ИГРОК ---
     selectCard(idx) {
-        if(this.players[0].type !== 'human') return;
+        if(this.isProcessing || this.players[0].type !== 'human') return;
         if(this.players[0].isOut) return; 
         soundManager.playClick();
         this.selectedCardIdx = (this.selectedCardIdx === idx) ? null : idx;
@@ -747,6 +768,7 @@ class DurakGame {
     }
 
     playerButtonAction() {
+        if(this.isProcessing || this.selectedCardIdx === null) return;
         if(this.selectedCardIdx === null) return;
         soundManager.playClick();
         const cardIdx = this.selectedCardIdx;
@@ -848,78 +870,67 @@ class DurakGame {
     }
 
     playerPass() {
+        if(this.isProcessing) return;
+
         soundManager.playClick();
+        // Если игрок - атакующий
         if (this.attackerIdx === 0) {
             if (this.isTaking) {
                 this.takeCards(this.defenderIdx);
             } else {
-                if(this.table.length > 0 && this.isTableCovered()) this.endBout(false);
+                if (this.table.length > 0 && this.isTableCovered()) this.endBout(false);
             }
-        } else if (this.defenderIdx === 0) {
+        }
+        // Если игрок - защищающийся
+        else if (this.defenderIdx === 0) {
             this.isTaking = true;
             this.updateUI();
             this.showMessage("ВЫ БЕРЁТЕ...");
             const att = this.players[this.attackerIdx];
-            if (att.type === 'bot') setTimeout(() => { if(app.isGameActive) this.botAttack(); }, 1000);
-        } else {
+            if (att.type === 'bot') setTimeout(() => {
+                if (app.isGameActive) this.botAttack();
+            }, 1000);
+        }
+        // Если игрок просто подкидывающий (не основной атакующий)
+        else {
             this.playerPassedToss = true;
+            this.showMessage("ВЫ: ПАС");
             this.updateUI();
-            
-            // ИСПРАВЛЕНИЕ: После того как игрок сказал "не буду",
-            // нужно проверить, есть ли другие игроки (боты), которые могут подкинуть
-            // Если нет - перейти к защите/взятию
-            
-            // Проверяем, есть ли боты, которые могут подкинуть
-            let anyBotCanToss = false;
-            for (let i = 1; i < this.players.length; i++) {
-                if (i !== this.defenderIdx && !this.players[i].isOut) {
-                    const bot = this.players[i];
-                    if (bot.hand.some(c => this.canAttack(c))) {
-                        anyBotCanToss = true;
-                        break;
-                    }
+
+            // Проверяем, может ли КТО-ТО еще из ботов подкинуть
+            let anyoneElseCanToss = false;
+            this.players.forEach((p, idx) => {
+                if (idx !== this.defenderIdx && !p.isOut && p.type === 'bot') {
+                    if (p.hand.some(c => this.canAttack(c))) anyoneElseCanToss = true;
                 }
-            }
-            
-            // Если никто не может подкинуть или все пасовали, заканчиваем подкидывание
-            if (!anyBotCanToss || this.playerPassedToss) {
-                // Если есть неотбитые карты - защищающийся должен отбиваться или брать
-                if (!this.isTableCovered()) {
+            });
+
+            if (!anyoneElseCanToss) {
+                // Если никто не подкидывает и бот забирает - завершаем
+                if (this.isTaking) {
+                    setTimeout(() => {
+                        if (app.isGameActive) this.takeCards(this.defenderIdx);
+                    }, BOT_DELAY);
+                }
+                // Если все отбито - бито
+                else if (this.isTableCovered()) {
+                    setTimeout(() => {
+                        if (app.isGameActive) this.endBout(false);
+                    }, BOT_DELAY);
+                }
+                // Если не отбито и бот еще не "взял" - пусть бот думает дальше
+                else {
                     const def = this.players[this.defenderIdx];
-                    if (def.type === 'bot') {
-                        setTimeout(() => { 
-                            if(app.isGameActive) this.botDefend(); 
-                        }, BOT_DELAY);
-                    }
-                } else {
-                    // Все карты отбиты - можно закончить раунд
-                    setTimeout(() => { 
-                        if(app.isGameActive) this.endBout(false); 
+                    if (def.type === 'bot') setTimeout(() => {
+                        if (app.isGameActive) this.botDefend();
                     }, BOT_DELAY);
                 }
             } else {
-                // Если есть другие боты, которые могут подкинуть - передаем ход им
-                // Нужно найти следующего бота после игрока, который может подкинуть
-                let nextBotIndex = -1;
-                for (let i = 1; i < this.players.length; i++) {
-                    if (i !== this.defenderIdx && !this.players[i].isOut) {
-                        const bot = this.players[i];
-                        if (bot.hand.some(c => this.canAttack(c))) {
-                            nextBotIndex = i;
-                            break;
-                        }
-                    }
-                }
-                
-                if (nextBotIndex !== -1) {
-                    // Сохраняем текущего атакующего для возможности боту подкинуть
-                    const currentAttacker = this.players[this.attackerIdx];
-                    if (currentAttacker.type === 'bot') {
-                        setTimeout(() => { 
-                            if(app.isGameActive) this.botAttack(); 
-                        }, BOT_DELAY);
-                    }
-                }
+                // Если другие боты могут подкинуть, запускаем цикл атак ботов
+                const att = this.players[this.attackerIdx];
+                if (att.type === 'bot') setTimeout(() => {
+                    if (app.isGameActive) this.botAttack();
+                }, BOT_DELAY);
             }
         }
     }
@@ -937,9 +948,27 @@ class DurakGame {
     }
 
     canAttack(c) {
+        const defender = this.players[this.defenderIdx];
+        if (!defender) return false;
+
+        // 1. Проверка на общее количество карт на столе (макс 6)
+        if (this.table.length >= 6) return false;
+
+        // 2. Проверка по количеству карт у защитника
+        // Считаем, сколько карт ему ЕЩЕ нужно отбить (непокрытые карты на столе)
+        const unbeatenCount = this.table.filter(p => !p.defend).length;
+        // Если бот забирает, он всё равно не может взять больше, чем у него было карт на начало хода
+        if (unbeatenCount >= defender.hand.length && !this.isTaking) return false;
+        // Если бот УЖЕ нажал "беру", мы можем подкинуть только столько, сколько у него осталось места в руке
+        if (this.isTaking && unbeatenCount >= defender.hand.length) return false;
+
+        // 3. Стандартная проверка на наличие ранга на столе
         if (this.table.length === 0) return true;
         const ranks = new Set();
-        this.table.forEach(p => { ranks.add(p.attack.rank); if(p.defend) ranks.add(p.defend.rank); });
+        this.table.forEach(p => { 
+            ranks.add(p.attack.rank); 
+            if(p.defend) ranks.add(p.defend.rank); 
+        });
         return ranks.has(c.rank);
     }
     canBeat(att, def) {
@@ -978,23 +1007,35 @@ class DurakGame {
 
     updateStatus() {
         if (this.deck.length === 0) {
-            this.players.forEach(p => { if (p.hand.length === 0 && !p.isOut) p.isOut = true; });
+            this.players.forEach(p => { 
+                if (p.hand.length === 0 && !p.isOut) {
+                    p.isOut = true; 
+                }
+            });
             this.updateVisualVisibility();
         }
     }
 
     checkWin() {
+        if (this.deck.length > 0) return false;
+
         this.updateStatus();
         const human = this.players[0];
+
         if (human.isOut) {
-            app.isGameActive = false; soundManager.playWin();
+            app.isGameActive = false; 
+            soundManager.playWin();
             setTimeout(() => { alert("Победа! (+100 очков)"); app.saveStats(true); app.toMenu(); }, 500);
             return true;
         }
-        const activeCount = this.players.filter(p => !p.isOut).length;
-        if (activeCount <= 1) {
-            if (!human.isOut) {
-                app.isGameActive = false; soundManager.playLose();
+        
+        // Проверка на проигрыш (остался один активный игрок)
+        const activePlayers = this.players.filter(p => !p.isOut);
+        if (activePlayers.length === 1) {
+            const lastPlayer = activePlayers[0];
+            if (lastPlayer.id === 0) { // Если этот последний - вы
+                app.isGameActive = false; 
+                soundManager.playLose();
                 setTimeout(() => { alert("Вы дурак! (-50 очков)"); app.saveStats(false); app.toMenu(); }, 500);
                 return true;
             }
