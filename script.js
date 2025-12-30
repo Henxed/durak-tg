@@ -553,6 +553,12 @@ class DurakGame {
         const defender = this.players[this.defenderIdx];
         const unbeatenCount = this.table.filter(p => !p.defend).length;
         
+        if (this.players[this.attackerIdx].hand.length === 0 && this.isTableCovered()) {
+            this.showMessage("БИТО!");
+            setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 1000);
+            return;
+        }
+
         // Если бот-защитник забирает или мы просто подкидываем
         // Нельзя кидать больше карт, чем осталось в руке у защитника
         if (unbeatenCount >= defender.hand.length) {
@@ -698,7 +704,7 @@ class DurakGame {
         if (type === 'defend' && bot.hand.length === 0 && this.deck.length > 0) {
              setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500); return;
         }
-        if (this.deck.length === 0 && bot.hand.length === 0) { this.checkWin(); return; }
+        
 
         if (type === 'transfer') {
              const newDef = this.players[this.defenderIdx];
@@ -841,8 +847,7 @@ class DurakGame {
         if (playerId === 0 && type === 'attack') this.playerPassedToss = false; 
 
         this.updateUI();
-
-        if (this.deck.length === 0 && p.hand.length === 0) { this.checkWin(); return; }
+    
         if (type === 'defend' && p.hand.length === 0) { setTimeout(() => { if(app.isGameActive) this.endBout(false); }, 500); return; }
         
         if (type === 'transfer') {
@@ -999,20 +1004,28 @@ class DurakGame {
     }
 
     endBout(took) {
-        this.table = [];
+        this.table = []; 
         this.playerPassedToss = false;
         this.isTaking = false;
-        this.updateStatus(); 
+        this.isProcessing = false;
+
         this.dealCards(6);
+        this.updateStatus(); 
+
         if (this.checkWin()) return; 
-        if (took) this.attackerIdx = this.getNextActiveIndex(this.defenderIdx); 
-        else this.attackerIdx = this.defenderIdx; 
+        if (took) {
+            this.attackerIdx = this.getNextActiveIndex(this.defenderIdx);
+        } else {
+            this.attackerIdx = this.defenderIdx;
+        }
+
         this.defenderIdx = this.getNextActiveIndex(this.attackerIdx);
+        this.saveGameState(); 
         this.processTurn();
     }
 
     updateStatus() {
-        if (this.deck.length === 0) {
+        if (this.deck.length === 0 && this.table.length === 0) {
             this.players.forEach(p => { 
                 if (p.hand.length === 0 && !p.isOut) {
                     p.isOut = true; 
